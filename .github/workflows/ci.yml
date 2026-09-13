@@ -21,12 +21,25 @@ jobs:
 
       # sqlite3.c / sqlite3.h are intentionally not committed (9MB+ of
       # generated source); fetch the pinned amalgamation instead.
+      # (unzip, not tar: GNU tar cannot extract .zip files.)
       - name: Fetch SQLite amalgamation
         shell: bash
         run: |
           curl -sSL -o /tmp/sqlite.zip https://www.sqlite.org/2026/sqlite-amalgamation-3530400.zip
-          mkdir -p /tmp/sqli && tar -xf /tmp/sqlite.zip -C /tmp/sqli
+          mkdir -p /tmp/sqli && unzip -q /tmp/sqlite.zip -d /tmp/sqli
           cp /tmp/sqli/sqlite-amalgamation-3530400/sqlite3.c /tmp/sqli/sqlite-amalgamation-3530400/sqlite3.h core/
+
+      # windows-latest ships mingw-w64 but not on PATH; wire it up (no network).
+      - name: Set up gcc (Windows)
+        if: runner.os == 'Windows'
+        run: |
+          $gcc = Get-Command gcc -ErrorAction SilentlyContinue
+          if (-not $gcc) {
+            foreach ($p in @('C:\mingw64\bin', 'C:\msys64\mingw64\bin')) {
+              if (Test-Path "$p\gcc.exe") { Add-Content $env:GITHUB_PATH $p; break }
+            }
+          }
+          gcc --version
 
       # The one dataset: reproducible from the versioned OEWN download.
       - name: Build gloss.db

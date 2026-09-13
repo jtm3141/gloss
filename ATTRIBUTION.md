@@ -15,7 +15,13 @@ or anything built from it, keep these credits intact.
   `oewn_url`, `built_at`). Never ship a database you can't trace.
 - **Canonical citation:** John P. McCrae, Alexandre Rademaker, Francis Bond,
   Ewa Rudnicka and Christiane Fellbaum (2019). *English WordNet 2019 – An
-  Open-Source WordNet for English.* Proceedings of GWC 2019.
+  Open-Source WordNet for English.* Proceedings of the 10th Global
+  WordNet Conference (GWC 2019), Wroclaw.
+- **Incorporated material:** OEWN incorporates Princeton WordNet and
+  *Taboo WordNet* — Merrick Choo Yeu Herng and Francis Bond (2021),
+  *Taboo wordnet*, Proceedings of GWC2021. This is why the taboo/offensive
+  filter above exists: the corpus deliberately contains slur material, and
+  gloss flags it rather than shipping it unmarked.
 
 ## Ancestry — Princeton WordNet
 

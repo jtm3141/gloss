@@ -1,11 +1,12 @@
-/* gloss.h — public API of the gloss C core.
+/* gloss.h — public API of the gloss C99 core.
  *
- * Phase 0 skeleton: the API shape is fixed so bindings can be written
- * against it; implementations land as the core is built out.
+ * gloss is a dictionary engine: gloss.db (SQLite, built from Open English
+ * WordNet by data/build_db.py) holds the data; this library owns all query
+ * logic. Every language binding is a thin wrapper over this API.
  *
- * Threading: a gloss_db_t handle is NOT thread-safe; use one per thread.
- * Memory: every string returned is owned by the handle or the entry —
- * do not free it yourself; gloss_free_entry() releases entries.
+ * Memory: anything returned is owned by the caller and must be released
+ * with the matching gloss_free_* function. A gloss_db_t handle is NOT
+ * thread-safe; use one handle per thread.
  */
 #ifndef GLOSS_H
 #define GLOSS_H
@@ -15,33 +16,60 @@ extern "C" {
 #endif
 
 typedef struct gloss_db gloss_db_t;
-typedef struct gloss_entry gloss_entry_t;
 
-/* Open a gloss.db built by data/build_db.py. Returns NULL on failure. */
+/* One word sense. */
+typedef struct {
+    char *pos;            /* "n", "v", "a" or "r" */
+    int   sense_no;       /* 1-based, frequency order */
+    long  synset_offset;  /* internal coordinate, for gloss_related() */
+    char *synset_pos;     /* pos code of the synset */
+    char *definition;
+    char **examples;      /* NULL-terminated array */
+    char **synonyms;      /* NULL-terminated; excludes the query word */
+} gloss_sense_t;
+
+/* A full lookup result: every sense of the word. */
+typedef struct {
+    char *word;           /* as queried */
+    int   nsenses;
+    gloss_sense_t *senses;
+} gloss_entry_t;
+
+/* One related synset (hypernym, antonym, ...). */
+typedef struct {
+    char **words;         /* NULL-terminated, synset word order */
+    char *definition;
+} gloss_related_t;
+
+/* Open a gloss.db (read-only). Returns NULL on failure. */
 gloss_db_t *gloss_open(const char *path);
 void        gloss_close(gloss_db_t *db);
 
-/* define: the single most common definition (sense #1). NULL if unknown. */
-const char *gloss_define(gloss_db_t *db, const char *word);
+/* The single most common definition: POS tried in order n, v, a, r,
+ * sense #1 wins. The word is tried as given, then lowercased (data files
+ * keep original case: "French leave"). Returns NULL for unknown words.
+ * Free with gloss_free_str. */
+char *gloss_define(gloss_db_t *db, const char *word);
+void  gloss_free_str(char *s);
 
-/* lookup: the full entry. Free with gloss_free_entry(). */
+/* Full entry: all senses (n, then v, a, r; sense_no ascending).
+ * Word tried as given, then lowercased.
+ * Returns NULL for unknown words. Free with gloss_free_entry. */
 gloss_entry_t *gloss_lookup(gloss_db_t *db, const char *word);
 void           gloss_free_entry(gloss_entry_t *e);
 
-/* Sense access on a looked-up entry. */
-int         gloss_entry_sense_count(const gloss_entry_t *e);
-const char *gloss_entry_definition(const gloss_entry_t *e, int sense_no); /* 1-based */
-const char *gloss_entry_pos(const gloss_entry_t *e, int sense_no);
+/* Related synsets for one sense. rel is a WNDB pointer symbol:
+ * "!" antonym, "@" hypernym, "~" hyponym, "#p" part meronym, ... Returns
+ * the count (0 if none); *out receives a caller-owned array, free it with
+ * gloss_free_related (even when the count is 0 and *out is NULL — safe). */
+int  gloss_related(gloss_db_t *db, const gloss_sense_t *sense,
+                   const char *rel, gloss_related_t **out);
+void gloss_free_related(gloss_related_t *rels, int n);
 
-/* Relations of one sense: rel is a WNDB pointer symbol, e.g. "@" (hypernym),
- * "!" (antonym), "~" (hyponym), "#p" (part meronym). Returns a
- * NULL-terminated array of definition strings owned by the entry. */
-const char **gloss_entry_related(const gloss_entry_t *e, int sense_no,
-                                 const char *rel);
-
-/* search: autocomplete over lemmas. Returns a NULL-terminated array of
- * lemma strings owned by the db; NULL on error. */
+/* Autocomplete: up to `limit` distinct lemmas starting with prefix,
+ * alphabetical. NULL-terminated; free with gloss_free_strarr. */
 const char **gloss_search(gloss_db_t *db, const char *prefix, int limit);
+void         gloss_free_strarr(const char **arr);
 
 #ifdef __cplusplus
 }

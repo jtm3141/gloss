@@ -15,9 +15,14 @@ data/*.bin
 build/
 *.o
 *.a
+*.dll
+*.so
+*.dylib
+*.exe
 
 # Node
 node_modules/
+bindings/js/dist/
 
 # OS / editors
 .DS_Store

@@ -37,6 +37,10 @@ EDITIONS = {
 }
 
 POS_FILES = ("noun", "verb", "adj", "adv")
+# Adjective position markers in data files: galore(ip), ready to hand(p).
+# Index files list the bare form; strip for matching and display (NLTK does the same).
+ADJ_MARKER = re.compile(r"\((a|p|ip)\)$")
+
 POS_CODES = {"noun": "n", "verb": "v", "adj": "a", "adv": "r"}
 
 SCHEMA = """
@@ -81,6 +85,18 @@ CREATE TABLE content_flag(
     lemma_id INTEGER PRIMARY KEY REFERENCES lemma(id),
     reason TEXT NOT NULL
 );
+-- Word order inside each synset (0 = first/most representative word).
+-- `word` is the surface form from the data file (original case: "French leave");
+-- lemma_id links to the (lowercased) index entry.
+CREATE TABLE synset_word(
+    synset_offset INTEGER NOT NULL,
+    pos TEXT NOT NULL,
+    word_pos INTEGER NOT NULL,
+    lemma_id INTEGER NOT NULL REFERENCES lemma(id),
+    word TEXT NOT NULL,
+    PRIMARY KEY(synset_offset, pos, word_pos)
+);
+CREATE INDEX idx_synset_word_lemma ON synset_word(lemma_id);
 """
 
 EXAMPLE_RE = re.compile(r'"([^"]*)"')
@@ -94,7 +110,7 @@ def split_definition(gloss):
     return definition, examples
 
 
-def parse_data_file(path, pos):
+def parse_data_file(path):
     """Yield (offset, words[(word, lex_id)], pointers, definition, examples).
 
     pointers: list of (ptr_symbol, to_offset, to_pos, from_word, to_word).
@@ -182,14 +198,19 @@ def build(wndb_dir, db_path, edition, url):
     total_synsets = 0
     total_relations = 0
     synset_defs = {}  # (offset, pos) -> (definition, examples_json)
-    for pos in POS_FILES:
-        synsets = parse_data_file(os.path.join(wndb_dir, f"data.{pos}"), pos)
-        print(f"data.{pos}: {len(synsets)} synsets")
+    synset_words = []  # (offset, pos, word_pos, word)
+    for pos_file in POS_FILES:
+        synsets = parse_data_file(os.path.join(wndb_dir, f"data.{pos_file}"))
+        print(f"data.{pos_file}: {len(synsets)} synsets")
         rows, rel_rows = [], []
         for offset, ss_type, words, pointers, definition, examples in synsets:
             p = "a" if ss_type == "s" else ss_type  # satellite adjectives -> a
             rows.append((offset, p, definition))
             synset_defs[(offset, p)] = (definition, json.dumps(examples))
+            for wp, (word, _lex_id) in enumerate(words):
+                if p == "a":
+                    word = ADJ_MARKER.sub("", word)
+                synset_words.append((offset, p, wp, word))
             for ptr, to_off, to_pos, fw, tw in pointers:
                 rel_rows.append((offset, p, ptr, to_off, to_pos, fw, tw))
         con.executemany("INSERT INTO synset(offset, pos, definition) VALUES(?,?,?)", rows)
@@ -222,6 +243,27 @@ def build(wndb_dir, db_path, edition, url):
     con.executemany(
         "INSERT INTO sense(lemma_id, pos, sense_no, synset_offset, definition, examples)"
         " VALUES(?,?,?,?,?,?)", sense_rows)
+
+    # Word order within synsets (needs lemma ids, so it goes last).
+    # Data files keep original case ("French leave"); index entries are
+    # lowercase — match exact first, then case-insensitively.
+    lemma_ids = {}
+    for lid, lemma, pos in con.execute("SELECT id, lemma, pos FROM lemma"):
+        lemma_ids.setdefault((lemma, pos), lid)
+        lemma_ids.setdefault((lemma.lower(), pos), lid)
+    sw_rows, sw_miss = [], 0
+    for offset, pos, wp, word in synset_words:
+        lid = lemma_ids.get((word, pos))
+        if lid is None:
+            lid = lemma_ids.get((word.lower(), pos))
+        if lid is None:
+            sw_miss += 1
+        else:
+            sw_rows.append((offset, pos, wp, lid, word))
+    con.executemany(
+        "INSERT INTO synset_word(synset_offset, pos, word_pos, lemma_id, word)"
+        " VALUES(?,?,?,?,?)", sw_rows)
+    print(f"synset_word rows: {len(sw_rows)} (unmatched: {sw_miss})")
 
     con.executemany("INSERT INTO meta(key, value) VALUES(?,?)", [
         ("source", "Open English WordNet"),

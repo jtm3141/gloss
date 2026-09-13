@@ -13,6 +13,9 @@ or anything built from it, keep these credits intact.
 - **Provenance:** the exact edition and download URL used to build `gloss.db`
   are recorded in the database itself (`meta` table: `oewn_edition`,
   `oewn_url`, `built_at`). Never ship a database you can't trace.
+- **Adaptation:** gloss rebuilds OEWN's WNDB distribution as SQLite
+  (documented schema plus added tables — see `data/README.md`). The word
+  data is unmodified; the format is.
 - **Canonical citation:** John P. McCrae, Alexandre Rademaker, Francis Bond,
   Ewa Rudnicka and Christiane Fellbaum (2019). *English WordNet 2019 – An
   Open-Source WordNet for English.* Proceedings of the 10th Global
@@ -45,8 +48,10 @@ Flag sources:
   recorded, not trusted as ground truth.
 - **LDNOOBW** ("List of Dirty, Naughty, Obscene, and Otherwise Bad Words") —
   <https://github.com/LDNOOBW/List-of-Dirty-Naughty-Obscene-and-Otherwise-Bad-Words> —
-  **CC-BY 4.0**, (c) 2012–2020 Shutterstock, Inc. Used: `en` word list,
-  exact headword match.
+  [CC-BY 4.0](https://creativecommons.org/licenses/by/4.0/),
+  (c) 2012–2020 Shutterstock, Inc. Used: `en` word list, exact headword
+  match, unmodified (the list itself is never altered or republished —
+  only match/no-match facts are recorded as flags).
 - **OEWN-native usage signals** — same CC-BY 4.0 as the dictionary data
   above. Definition usage labels (`(ethnic slur)`, `(offensive)`, `(vulgar)`,
   …) and `exemplifies` links into the "ethnic slur" usage domain. These are
@@ -55,6 +60,36 @@ Flag sources:
 
 The exact source versions (fetch date + sha256) are recorded on every flag
 row and in the `meta` table (`content_flag_sources`).
+
+## Third-party license texts
+
+gloss does not republish the filter lists themselves (only match/no-match
+facts derived from them), but to remove all doubt the full MIT text of the
+one MIT-licensed filter source ships here, as its license requests:
+
+```
+MIT License
+
+Copyright (c) 2021 David Sojevic
+
+Permission is hereby granted, free of charge, to any person obtaining a copy
+of this software and associated documentation files (the "Software"), to deal
+in the Software without restriction, including without limitation the rights
+to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+copies of the Software, and to permit persons to whom the Software is
+furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in all
+copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+SOFTWARE.
+```
 
 ## Pronunciation data — CMUdict (planned, not yet imported)
 

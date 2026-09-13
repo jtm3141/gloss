@@ -68,10 +68,12 @@ The canonical DB keeps every entry and flags taboo/offensive ones;
 filtered builds (phone apps) remove flagged entries at build time.
 Two tables:
 
-- `content_flag(lemma_id, reason, source, category, severity, source_version)`
-  — lemma-level: the whole headword is taboo (curated profanity lists).
-- `content_flag_synset(synset_offset, pos, reason, source)` — sense-level:
-  one synset is taboo (OEWN's own usage signals). Sense-aware flagging is
+- `content_flag(lemma_id, reason, source, category, severity, source_version,
+  source_url, source_license)` — lemma-level: the whole headword is taboo
+  (curated profanity lists). Every row carries full provenance.
+- `content_flag_synset(synset_offset, pos, reason, source, source_url,
+  source_license, source_version)` — sense-level: one synset is taboo
+  (OEWN's own usage signals), likewise fully provenanced. Sense-aware flagging is
   what keeps "boy" definable: only its slur sense is flagged, its 3 clean
   senses survive.
 

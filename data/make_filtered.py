@@ -5,7 +5,7 @@ Reads content_flag (lemma-level: the whole headword is taboo) and
 content_flag_synset (sense-level: one synset is taboo) from the canonical
 DB, then in the copy:
 
-  1. removes every flagged lemma's senses and synset words,
+  1. removes every policy-selected flagged lemma's senses and synset words,
   2. removes every flagged synset -- its words, senses, and relations,
   3. prunes relations left dangling (synset or word endpoint gone),
   4. drops lemmas left with no senses,
@@ -13,10 +13,21 @@ DB, then in the copy:
      keeps the flags for audit),
   6. stamps meta: build_profile=filtered, filtered_at, removal counts.
 
+Filtering policy (DEFAULT_POLICY, overridable via CLI):
+  - OEWN-native flags (oewn-usage-label, oewn-slur-domain) are ALWAYS
+    applied. They are sense-aware and authoritative; no knob disables them,
+    so genuine slur senses are removed whatever the third-party settings.
+  - dsojevic/profanity-list flags apply at severity >= dsojevic_min_severity
+    (default 2: severity-1 "mild" terms such as damn, hell, penis are kept;
+    any slur senses among them are still caught by the OEWN tier).
+  - LDNOOBW flags carry no severity ratings; applied as a whole unless
+    --no-ldnoobw.
+
 Usage:
     python data/make_filtered.py --db data/gloss.db --out data/gloss-filtered.db
+    python data/make_filtered.py --dsojevic-min-severity 1  # remove everything flagged
 
-Prints a removal report. Importable: make_filtered(src, out) -> dict.
+Prints a removal report. Importable: make_filtered(src, out, policy=None) -> dict.
 """
 
 import argparse
@@ -27,34 +38,102 @@ import shutil
 import sqlite3
 
 
-def make_filtered(src, out):
+DEFAULT_POLICY = {
+    # OEWN-native tiers are authoritative and always applied (no knob).
+    "oewn_usage_label": True,
+    "oewn_slur_domain": True,
+    # Third-party list knobs:
+    "dsojevic_min_severity": 2,  # 1..4; 1 = remove everything list-flagged
+    "ldnoobw": True,
+}
+
+POLICY_DESCRIPTION = (
+    "OEWN usage-label + slur-domain flags always applied (authoritative, "
+    "sense-aware); dsojevic/profanity-list flags applied at severity >= "
+    "{dsojevic_min_severity}; LDNOOBW flags {ldnoobw_state}."
+)
+
+
+def describe_policy(policy):
+    return POLICY_DESCRIPTION.format(
+        dsojevic_min_severity=policy["dsojevic_min_severity"],
+        ldnoobw_state="applied" if policy["ldnoobw"] else "skipped",
+    )
+
+
+def policy_flagged_lemma_ids(con, policy):
+    """Lemma ids this policy actually filters: a subset of content_flag."""
+    ids = set()
+    # OEWN slur-domain lemma flags are always applied.
+    ids.update(r[0] for r in con.execute(
+        "SELECT lemma_id FROM content_flag WHERE source = 'oewn-slur-domain'"))
+    # dsojevic at or above the severity threshold.
+    ids.update(r[0] for r in con.execute(
+        "SELECT lemma_id FROM content_flag "
+        "WHERE source = 'dsojevic/profanity-list' AND severity >= ?",
+        (policy["dsojevic_min_severity"],)))
+    # LDNOOBW carries no severity ratings; applied as a whole unless disabled.
+    if policy["ldnoobw"]:
+        ids.update(r[0] for r in con.execute(
+            "SELECT lemma_id FROM content_flag WHERE source = 'LDNOOBW'"))
+    return ids
+
+
+def policy_flagged_synsets(con):
+    """(offset, pos) pairs this policy filters.
+
+    content_flag_synset is entirely OEWN-native and always applied.
+    """
+    return [tuple(r) for r in con.execute(
+        "SELECT synset_offset, pos FROM content_flag_synset")]
+
+
+def make_filtered(src, out, policy=None):
+    policy = dict(DEFAULT_POLICY, **(policy or {}))
     if os.path.abspath(src) == os.path.abspath(out):
         raise SystemExit("refusing to filter the db in place; use --out")
     shutil.copy(src, out)
     con = sqlite3.connect(out)
     con.execute("PRAGMA foreign_keys = OFF")
-    report = {}
+    report = {"policy": policy, "policy_description": describe_policy(policy)}
 
     def n(q, p=()):
         return con.execute(q, p).fetchone()[0]
 
-    report["flagged_lemmas"] = n("SELECT COUNT(*) FROM content_flag")
-    report["flagged_synsets"] = n("SELECT COUNT(*) FROM content_flag_synset")
+    total_flagged_lemmas = n("SELECT COUNT(*) FROM content_flag")
+    total_flagged_synsets = n("SELECT COUNT(*) FROM content_flag_synset")
+    report["flagged_lemmas_total"] = total_flagged_lemmas
+    report["flagged_synsets_total"] = total_flagged_synsets
+
+    # The exact flag rows this policy applies (temp tables keep the
+    # DELETEs and the safety tests on the same set).
+    con.execute("CREATE TEMP TABLE policy_lemma(lemma_id INTEGER PRIMARY KEY)")
+    con.executemany("INSERT OR IGNORE INTO policy_lemma VALUES(?)",
+                    [(i,) for i in policy_flagged_lemma_ids(con, policy)])
+    con.execute("CREATE TEMP TABLE policy_synset(synset_offset INTEGER, pos TEXT, "
+                "PRIMARY KEY (synset_offset, pos))")
+    con.executemany("INSERT OR IGNORE INTO policy_synset VALUES(?,?)",
+                    policy_flagged_synsets(con))
+    report["flagged_lemmas_applied"] = n("SELECT COUNT(*) FROM policy_lemma")
+    report["flagged_synsets_applied"] = n("SELECT COUNT(*) FROM policy_synset")
+    report["flagged_lemmas_retained"] = (
+        total_flagged_lemmas - report["flagged_lemmas_applied"])
+
     before = {t: n(f"SELECT COUNT(*) FROM {t}")
               for t in ("lemma", "sense", "synset", "synset_word", "relation")}
 
-    # 1. flagged lemmas lose their senses and synset words
+    # 1. policy-flagged lemmas lose their senses and synset words
     con.execute("DELETE FROM sense WHERE lemma_id IN "
-                "(SELECT lemma_id FROM content_flag)")
+                "(SELECT lemma_id FROM policy_lemma)")
     con.execute("DELETE FROM synset_word WHERE lemma_id IN "
-                "(SELECT lemma_id FROM content_flag)")
+                "(SELECT lemma_id FROM policy_lemma)")
     # 2. flagged synsets lose words, senses, and the synset itself
     con.execute("DELETE FROM sense WHERE (synset_offset, pos) IN "
-                "(SELECT synset_offset, pos FROM content_flag_synset)")
+                "(SELECT synset_offset, pos FROM policy_synset)")
     con.execute("DELETE FROM synset_word WHERE (synset_offset, pos) IN "
-                "(SELECT synset_offset, pos FROM content_flag_synset)")
+                "(SELECT synset_offset, pos FROM policy_synset)")
     con.execute("DELETE FROM synset WHERE (offset, pos) IN "
-                "(SELECT synset_offset, pos FROM content_flag_synset)")
+                "(SELECT synset_offset, pos FROM policy_synset)")
     # 3. prune what the removals orphaned
     con.execute("DELETE FROM synset WHERE NOT EXISTS "
                 "(SELECT 1 FROM synset_word w WHERE w.synset_offset = synset.offset "
@@ -94,8 +173,7 @@ def make_filtered(src, out):
         ("build_profile", "filtered"),
         ("filtered_at", dt.datetime.now(dt.timezone.utc).isoformat()),
         ("content_policy",
-         "filtered build: entries flagged taboo/offensive in the canonical "
-         "DB (content_flag / content_flag_synset) were removed at build time "
+         "filtered build: " + describe_policy(policy) + " "
          "by data/make_filtered.py; see ATTRIBUTION.md for the flag sources"),
     ])
     con.execute("INSERT INTO meta(key, value) VALUES(?,?)",
@@ -115,11 +193,24 @@ def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--db", default="data/gloss.db")
     ap.add_argument("--out", default="data/gloss-filtered.db")
+    ap.add_argument("--dsojevic-min-severity", type=int, choices=[1, 2, 3, 4],
+                    default=DEFAULT_POLICY["dsojevic_min_severity"],
+                    help="apply dsojevic/profanity-list flags at severity >= N "
+                         "(default 2; 1 removes everything list-flagged)")
+    ap.add_argument("--no-ldnoobw", action="store_true",
+                    help="skip LDNOOBW lemma flags")
     args = ap.parse_args()
-    report = make_filtered(args.db, args.out)
+    policy = dict(DEFAULT_POLICY,
+                  dsojevic_min_severity=args.dsojevic_min_severity,
+                  ldnoobw=not args.no_ldnoobw)
+    report = make_filtered(args.db, args.out, policy)
     print(f"filtered db: {args.out}")
-    for k in ("flagged_lemmas", "flagged_synsets"):
-        print(f"  {k}: {report[k]}")
+    print(f"  policy: {report['policy_description']}")
+    print(f"  flagged lemmas: {report['flagged_lemmas_applied']} applied, "
+          f"{report['flagged_lemmas_retained']} retained "
+          f"(of {report['flagged_lemmas_total']} total)")
+    print(f"  flagged synsets: {report['flagged_synsets_applied']} applied "
+          f"(of {report['flagged_synsets_total']} total)")
     print("  removed:")
     for t, c in report["removed"].items():
         print(f"    {t}: {c}")

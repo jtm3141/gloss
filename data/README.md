@@ -84,8 +84,22 @@ Pipeline:
 
 Current population (OEWN 2024): 248 lemma flags (213 dsojevic/profanity-list
 MIT, 34 LDNOOBW CC-BY-4.0, 1 OEWN slur-domain) + 43 synset flags
-(42 OEWN usage-label, 1 OEWN slur-domain). Filtered build removes
-297 lemmas, 459 senses, 156 synsets, 1104 relations; foreign-key clean.
+(42 OEWN usage-label, 1 OEWN slur-domain).
+
+Filtering policy (`data/make_filtered.py`, `DEFAULT_POLICY`): OEWN's own
+flags (usage-label, slur-domain) are always applied — they are sense-aware
+and authoritative, so genuine slur senses are removed under any settings.
+Third-party list flags are configurable: dsojevic/profanity-list applies at
+severity >= 2 by default, so the 32 severity-1 "mild" lemma flags (damn,
+hell, penis, jesus, ...) are retained — a dictionary that cannot define
+*jesus* or *hell* is broken. Misrated slurs among them (jap, kraut, wog)
+are still removed: their only senses are caught by the OEWN synset tier,
+so the lemmas orphan out. `--dsojevic-min-severity 1` restores
+remove-everything; `--no-ldnoobw` skips LDNOOBW. The effective policy is
+stamped into the filtered DB's `meta.content_policy`.
+
+Default-policy filtered build removes 268 lemmas, 411 senses, 144 synsets,
+957 relations; foreign-key clean.
 Design rules: anchored whole-headword matching only (never substring —
 "sparse", "manuscript", "Scunthorpe" stay safe); dsojevic `exceptions`
 honored; plain `(slang)` labels are not offensive; source URL/license/
@@ -100,7 +114,9 @@ build rather than silently dropping neutral content.
 ## Known limitations
 
 - Severity ratings come from dsojevic/profanity-list, where most entries
-  default to severity 3 — recorded, not trusted as ground truth.
+  default to severity 3 — recorded, not trusted as ground truth. dsojevic
+  rates 'jap', 'kraut', and 'wog' as severity 1 (mild), so severity never
+  gates slur removal: the OEWN synset tier catches those senses regardless.
 
 ## Reproducibility rule
 

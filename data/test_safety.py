@@ -11,8 +11,13 @@ Checks:
   3. Known-benign words (the Scunthorpe cases) are NOT flagged.
   4. Sense-aware: 'boy' keeps its clean senses; only its slur synset is
      synset-flagged.
-  5. make_filtered.py output: no flagged content survives, the graph stays
-     referentially sound, and ordinary words are untouched.
+  5. make_filtered.py output under the default policy: no policy-flagged
+     content survives, the graph stays referentially sound, ordinary words
+     are untouched, severity-1 mild terms (jesus, hell, ass, ...) survive
+     with their senses, and misrated slurs (jap, kraut, wog) are still
+     removed via the OEWN synset tier.
+  6. policy scope: exactly the 32 dsojevic severity-1 lemma flags are
+     retained by the default policy; everything else list-flagged applies.
 
 Exit nonzero on the first failure.
 """
@@ -120,21 +125,24 @@ def main():
     check(r is not None and r[0] == "oewn-slur-domain",
           f"'blackamoor' is lemma-flagged via oewn-slur-domain ({r})")
 
-    print("== 5. filtered build ==")
+    print("== 5. filtered build (default policy) ==")
     check(lemma_id(con, "dog") is not None, "lemma 'dog' exists")
     dog_senses = con.execute(
         "SELECT COUNT(*) FROM sense WHERE lemma_id = ?", (lemma_id(con, "dog"),)).fetchone()[0]
     check(dog_senses > 0, f"'dog' has {dog_senses} senses in canonical db")
+    policy = make_filtered.DEFAULT_POLICY
+    applied_lemmas = make_filtered.policy_flagged_lemma_ids(con, policy)
+    applied_synsets = make_filtered.policy_flagged_synsets(con)
     with tempfile.TemporaryDirectory() as tmp:
         out = os.path.join(tmp, "gloss-filtered.db")
         report = make_filtered.make_filtered(args.db, out)
         f = sqlite3.connect(out)
         check(f.execute("SELECT COUNT(*) FROM sqlite_master WHERE name LIKE 'content_flag%'").fetchone()[0] == 0,
               "flag tables dropped from the shipped db")
-        for (lid,) in con.execute("SELECT lemma_id FROM content_flag"):
+        for lid in sorted(applied_lemmas):
             check(f.execute("SELECT COUNT(*) FROM sense WHERE lemma_id = ?", (lid,)).fetchone()[0] == 0,
-                  f"flagged lemma_id {lid} has no senses in filtered db")
-        for off, pos in con.execute("SELECT synset_offset, pos FROM content_flag_synset"):
+                  f"policy-flagged lemma_id {lid} has no senses in filtered db")
+        for off, pos in applied_synsets:
             check(f.execute("SELECT COUNT(*) FROM synset WHERE offset = ? AND pos = ?", (off, pos)).fetchone()[0] == 0,
                   f"flagged synset ({off},{pos}) gone from filtered db")
         check(f.execute("PRAGMA foreign_key_check").fetchall() == [],
@@ -174,7 +182,33 @@ def main():
               "no sense orphaned across (offset, pos)")
         check(report["removed"]["synset"] > 0 and report["removed"]["lemma"] > 0,
               f"removals happened: {report['removed']}")
+        # severity-1 mild/clinical lemmas survive with their senses
+        for w in ["jesus", "christ", "hell", "ass", "nipple", "penis", "damn"]:
+            row = f.execute("SELECT id FROM lemma WHERE lemma = ?", (w,)).fetchone()
+            check(row is not None, f"severity-1 lemma {w!r} survives filtering")
+            ns = f.execute("SELECT COUNT(*) FROM sense WHERE lemma_id = ?",
+                           (row[0],)).fetchone()[0]
+            check(ns > 0, f"severity-1 lemma {w!r} keeps {ns} senses")
+        # misrated slurs are still gone: their only senses were caught by
+        # the OEWN synset tier, so the lemmas orphan out
+        for w in ["jap", "kraut", "wog"]:
+            row = f.execute("SELECT id FROM lemma WHERE lemma = ?", (w,)).fetchone()
+            ns = (f.execute("SELECT COUNT(*) FROM sense WHERE lemma_id = ?",
+                            (row[0],)).fetchone()[0] if row else 0)
+            check(ns == 0, f"slur {w!r} has no senses after filtering")
         f.close()
+
+    print("== 6. policy scope ==")
+    all_flagged = {r[0] for r in con.execute("SELECT lemma_id FROM content_flag")}
+    retained = all_flagged - applied_lemmas
+    check(len(retained) == 32,
+          f"default policy retains 32 severity-1 lemma flags ({len(retained)})")
+    if retained:
+        q = ("SELECT COUNT(*) FROM content_flag WHERE lemma_id IN (%s) "
+             "AND NOT (source = 'dsojevic/profanity-list' AND severity = 1)"
+             % ",".join("?" * len(retained)))
+        check(con.execute(q, tuple(retained)).fetchone()[0] == 0,
+              "every retained flag is dsojevic severity 1")
     con.close()
     print("\nALL SAFETY TESTS PASSED")
 

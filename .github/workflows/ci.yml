@@ -80,6 +80,7 @@ jobs:
 
       # JS binding.
       - name: JS binding smoke test
+        shell: bash
         run: |
           cd bindings/js
           npm ci

@@ -45,14 +45,22 @@ not lossy in any way a dictionary app can observe:
   entailment (407) and causation (221); WNDB stores the forward pointer
   (`*`, `>`) once. Recoverable by inversion.
 - **16,887 = native "other" sense relations** (all verb→noun, e.g.
-  americanise→americanisation). Their synset pairs are linked in WNDB as
-  `+` (derivation) rows (16,883 of 16,887); WNDB types them `+` and resolves
-  word-level endpoints with its own heuristic, so only ~45% share exact
-  word numbers. Same links, different typing.
+  americanise→americanisation). 16,883 of 16,887 have some WNDB `+`
+  (derivation) row between the same synset pair; 4 have no WNDB pointer
+  between the pair at all. Of the full 16,887, only 7,674 (45.4%) match
+  the native word-level endpoints exactly. WNDB’s word numbers are its own
+  convention and do not reproduce native sense endpoints — and this
+  endpoint-mismatch pattern holds across lexical relation types
+  (derivation 39,284 matched / 35,362 mismatched; antonym 5,764 / 2,232;
+  pertainym 5,477 / 2,595; "also" 292 / 856; exemplifies and inverse
+  156 / 6,441 each; participle 47 / 26; native "similar" 0 / 2).
 
-Net: the relation graph a dictionary traverses is complete — synsets match
-exactly and every native relation is accounted for. The count gap is typing
-and direction conventions, not missing data.
+Net: the *synset-level* relation graph reconciles cleanly, but WNDB does
+not faithfully preserve native sense-level relation typing or endpoints.
+A dictionary traversing synset-to-synset links loses nothing; faithful
+word-level lexical relations require parsing the native WN-LMF XML.
+The count gap is mostly typing and direction conventions — but the
+endpoint fidelity gap is real and is not hand-waved away.
 
 ## Content flags (taboo/offensive filtering)
 

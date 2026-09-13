@@ -308,11 +308,14 @@ def build(wndb_dir, db_path, edition, url):
         print("ERROR: synset count off by more than 1%")
         ok = False
     # Relations: the WNDB "legacy" export carries fewer rows than the
-    # published native-format count, but the gap is fully reconciled (see
-    # data/README.md): the synset-level graph is 100% identical, 628 rows
-    # are inverse entailment/causation pairs stored forward-only, and 16,887
-    # are native "other" verb->noun links whose synset pairs are linked here
-    # as + (derivation). Nothing a dictionary app traverses is missing.
+    # published native-format count. The gap is reconciled (see
+    # data/README.md) at the synset level: 628 rows are inverse
+    # entailment/causation pairs stored forward-only, and 16,887 are native
+    # "other" verb->noun links mostly present here as + (derivation).
+    # Caveat: WNDB does NOT faithfully reproduce native sense-level
+    # endpoints (only ~45% exact matches; 4 native links have no WNDB
+    # pointer at all). Synset-level traversal is complete; word-level
+    # lexical fidelity needs the native XML.
     print(f"note: WNDB relations {total_relations} vs published native "
           f"count {exp['relations']} (gap reconciled; see data/README.md)")
     con.close()

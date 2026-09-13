@@ -52,11 +52,12 @@ def build_lib():
     dll = os.path.join(HERE, "gloss.dll" if os.name == "nt" else "libgloss.so")
     if not os.path.exists(dll):
         print("compiling C core ...")
-        subprocess.run(
-            ["gcc", "-O2", "-shared",
-             "-o", dll, "gloss.c", "sqlite3.c", "-I."],
-            cwd=HERE, check=True,
-            stdout=subprocess.PIPE, stderr=subprocess.STDOUT)
+        cmd = ["gcc", "-O2", "-shared"]
+        if os.name != "nt":
+            cmd.append("-fPIC")
+        cmd += ["-o", dll, "gloss.c", "sqlite3.c", "-I."]
+        subprocess.run(cmd, cwd=HERE, check=True,
+                       stdout=subprocess.PIPE, stderr=subprocess.STDOUT)
     return dll
 
 

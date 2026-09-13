@@ -19,6 +19,15 @@ jobs:
         with:
           python-version: "3.12"
 
+      # sqlite3.c / sqlite3.h are intentionally not committed (9MB+ of
+      # generated source); fetch the pinned amalgamation instead.
+      - name: Fetch SQLite amalgamation
+        shell: bash
+        run: |
+          curl -sSL -o /tmp/sqlite.zip https://www.sqlite.org/2026/sqlite-amalgamation-3530400.zip
+          mkdir -p /tmp/sqli && tar -xf /tmp/sqlite.zip -C /tmp/sqli
+          cp /tmp/sqli/sqlite-amalgamation-3530400/sqlite3.c /tmp/sqli/sqlite-amalgamation-3530400/sqlite3.h core/
+
       # The one dataset: reproducible from the versioned OEWN download.
       - name: Build gloss.db
         run: python data/build_db.py --download

@@ -10,6 +10,7 @@ venv/
 *.zip
 *.gz
 data/wndb/
+data/.cache/
 data/*.bin
 
 # C

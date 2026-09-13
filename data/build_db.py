@@ -79,11 +79,27 @@ CREATE TABLE relation(
     to_word INTEGER NOT NULL
 );
 CREATE INDEX idx_relation_from ON relation(from_offset, from_pos);
--- Content safety: the canonical DB keeps everything, flagged here.
--- Build profiles (e.g. phone apps) filter these out at build time.
+-- Content safety: the canonical DB keeps everything; flags live here.
+-- Lemma-level flags come from curated profanity lists: the whole headword
+-- is taboo. Synset-level flags come from OEWN's own usage signals: one
+-- sense is taboo (e.g. 'boy' as an ethnic slur) and flagging the lemma
+-- would nuke its clean senses. Filtered builds (phone apps) remove flagged
+-- lemmas and synsets at build time; see data/build_flags.py and
+-- data/make_filtered.py.
 CREATE TABLE content_flag(
     lemma_id INTEGER PRIMARY KEY REFERENCES lemma(id),
-    reason TEXT NOT NULL
+    reason TEXT NOT NULL,
+    source TEXT NOT NULL,            -- e.g. dsojevic/profanity-list
+    category TEXT,                   -- comma-joined source tags, when present
+    severity INTEGER,                -- 1 mild .. 4 severe, when the source rates it
+    source_version TEXT NOT NULL     -- source date + content hash
+);
+CREATE TABLE content_flag_synset(
+    synset_offset INTEGER NOT NULL,
+    pos TEXT NOT NULL,
+    reason TEXT NOT NULL,
+    source TEXT NOT NULL,            -- oewn-usage-label | oewn-slur-domain
+    PRIMARY KEY(synset_offset, pos)
 );
 -- Word order inside each synset (0 = first/most representative word).
 -- `word` is the surface form from the data file (original case: "French leave");
@@ -284,7 +300,8 @@ def build(wndb_dir, db_path, edition, url):
     print(f"relations: {total_relations:>8}  (published {exp['relations']})")
     print(f"lemmas:    {n_lemmas:>8}  senses: {total_senses}")
     print(f"content_flag rows: {con.execute('SELECT COUNT(*) FROM content_flag').fetchone()[0]}"
-          " (population is a follow-up; schema is live)")
+          f" (+ {con.execute('SELECT COUNT(*) FROM content_flag_synset').fetchone()[0]} synset flags;"
+          " run data/build_flags.py to populate)")
     ok = True
     # Synsets must match: they prove the parse is structurally complete.
     if abs(total_synsets - exp["synsets"]) / exp["synsets"] > 0.01:

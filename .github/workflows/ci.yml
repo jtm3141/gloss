@@ -45,6 +45,13 @@ jobs:
       - name: Build gloss.db
         run: python data/build_db.py --download
 
+      # Taboo/offensive flags: reproducible from the versioned list downloads.
+      - name: Build content flags
+        run: python data/build_flags.py --db data/gloss.db
+
+      - name: Content-filter safety tests
+        run: python data/test_safety.py --db data/gloss.db
+
       - name: Generate conformance fixtures
         run: python data/gen_conformance.py
 

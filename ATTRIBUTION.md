@@ -24,11 +24,37 @@ Open English WordNet incorporates and corrects Princeton University's WordNet.
 original database and tools were released under a BSD-style license and are
 freely available.
 
-## Pronunciation data — CMUdict
+## Taboo/offensive-word filter sources
 
-Pronunciation (IPA) data carried over from the original WordNet Dictionary
-artifact is derived from CMUdict (Carnegie Mellon Pronouncing Dictionary),
-which is BSD-licensed.
+The canonical database keeps all entries and flags taboo/offensive ones
+(`content_flag`, `content_flag_synset`); filtered builds remove flagged
+entries at build time (`data/build_flags.py`, `data/make_filtered.py`).
+Flag sources:
+
+- **dsojevic/profanity-list** — <https://github.com/dsojevic/profanity-list> —
+  **MIT**, (c) 2021 David Sojevic. Used: `en.json` profanity match patterns
+  (with `exceptions` honored; matching is anchored whole-headword only, per
+  the list's `allow_partial` semantics). Severity 1–4 and tags recorded per
+  flag; most entries default to severity 3 in the source, so severity is
+  recorded, not trusted as ground truth.
+- **LDNOOBW** ("List of Dirty, Naughty, Obscene, and Otherwise Bad Words") —
+  <https://github.com/LDNOOBW/List-of-Dirty-Naughty-Obscene-and-Otherwise-Bad-Words> —
+  **CC-BY 4.0**, (c) 2012–2020 Shutterstock, Inc. Used: `en` word list,
+  exact headword match.
+- **OEWN-native usage signals** — same CC-BY 4.0 as the dictionary data
+  above. Definition usage labels (`(ethnic slur)`, `(offensive)`, `(vulgar)`,
+  …) and `exemplifies` links into the "ethnic slur" usage domain. These are
+  sense-aware (`content_flag_synset`), so e.g. "boy" keeps its clean senses
+  while its slur sense is flagged.
+
+The exact source versions (fetch date + sha256) are recorded on every flag
+row and in the `meta` table (`content_flag_sources`).
+
+## Pronunciation data — CMUdict (planned, not yet imported)
+
+Pronunciation (IPA) support is planned from CMUdict (Carnegie Mellon
+Pronouncing Dictionary), which is BSD-licensed. No pronunciation data is
+in the database yet; this section is a placeholder until it lands.
 
 ## Our code
 

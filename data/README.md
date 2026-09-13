@@ -54,11 +54,38 @@ Net: the relation graph a dictionary traverses is complete — synsets match
 exactly and every native relation is accounted for. The count gap is typing
 and direction conventions, not missing data.
 
+## Content flags (taboo/offensive filtering)
+
+The canonical DB keeps every entry and flags taboo/offensive ones;
+filtered builds (phone apps) remove flagged entries at build time.
+Two tables:
+
+- `content_flag(lemma_id, reason, source, category, severity, source_version)`
+  — lemma-level: the whole headword is taboo (curated profanity lists).
+- `content_flag_synset(synset_offset, pos, reason, source)` — sense-level:
+  one synset is taboo (OEWN's own usage signals). Sense-aware flagging is
+  what keeps "boy" definable: only its slur sense is flagged, its 3 clean
+  senses survive.
+
+Pipeline:
+
+    python data/build_db.py --download      # schema + full data
+    python data/build_flags.py              # populate flags (downloads versioned lists)
+    python data/test_safety.py              # safety suite (must be green)
+    python data/make_filtered.py --db data/gloss.db --out data/gloss-filtered.db
+
+Current population (OEWN 2024): 247 lemma flags (213 dsojevic/profanity-list
+MIT, 34 LDNOOBW CC-BY-4.0) + 45 synset flags (42 OEWN usage-label, 3 OEWN
+ethnic-slur-domain). Filtered build removes 298 lemmas, 460 senses,
+157 synsets, 1118 relations; foreign-key clean. Design rules: anchored
+whole-headword matching only (never substring — "sparse", "manuscript",
+"Scunthorpe" stay safe); dsojevic `exceptions` honored; plain `(slang)`
+labels are not offensive; source URL/license/version recorded on every row.
+
 ## Known limitations
 
-- `content_flag` is empty in v1: the schema and the build-time filtering
-  contract are live, but the taboo-word list still needs to be sourced
-  (OEWN incorporates Taboo WordNet material — inspect how it's marked).
+- Severity ratings come from dsojevic/profanity-list, where most entries
+  default to severity 3 — recorded, not trusted as ground truth.
 
 ## Reproducibility rule
 

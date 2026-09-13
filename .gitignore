@@ -8,6 +8,7 @@ venv/
 *.db
 *.db-journal
 *.zip
+*.gz
 data/wndb/
 data/*.bin
 

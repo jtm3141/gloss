@@ -290,12 +290,14 @@ def build(wndb_dir, db_path, edition, url):
     if abs(total_synsets - exp["synsets"]) / exp["synsets"] > 0.01:
         print("ERROR: synset count off by more than 1%")
         ok = False
-    # Relations are informational: the WNDB export is a lossy "legacy"
-    # rendering of OEWN's native data, so it carries fewer relations than
-    # the published native-format count. A native-format parse is a
-    # follow-up (see data/README.md).
+    # Relations: the WNDB "legacy" export carries fewer rows than the
+    # published native-format count, but the gap is fully reconciled (see
+    # data/README.md): the synset-level graph is 100% identical, 628 rows
+    # are inverse entailment/causation pairs stored forward-only, and 16,887
+    # are native "other" verb->noun links whose synset pairs are linked here
+    # as + (derivation). Nothing a dictionary app traverses is missing.
     print(f"note: WNDB relations {total_relations} vs published native "
-          f"count {exp['relations']} (legacy export is lossy by design)")
+          f"count {exp['relations']} (gap reconciled; see data/README.md)")
     con.close()
     size_mb = os.path.getsize(db_path) / 1e6
     print(f"\nwrote {db_path} ({size_mb:.1f} MB)" + (" [OK]" if ok else " [CHECK]"))

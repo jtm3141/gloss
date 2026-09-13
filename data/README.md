@@ -62,6 +62,35 @@ word-level lexical relations require parsing the native WN-LMF XML.
 The count gap is mostly typing and direction conventions — but the
 endpoint fidelity gap is real and is not hand-waved away.
 
+### Relation pointer directions (for binding authors)
+
+`relation.ptr` stores the raw WNDB pointer symbol; `from_word`/`to_word`
+are 1-based word indexes into the source/target synset's word list
+(`synset_word.word_pos` is 0-based, so word *n* of a relation maps to
+`word_pos = n - 1`; `0` means the whole synset). Directions, verified
+2026-09-13 against the native XML (`%p` ≡ native `mero_part`,
+`#p` ≡ native `holo_part`):
+
+| ptr | meaning (X = `from_offset` synset) | example |
+|---|---|---|
+| `%p`, `%m`, `%s` | X **has part/member/substance** Y | car → accelerator; dog → flag (its tail) |
+| `#p`, `#m`, `#s` | X **is part/member of** Y | wheel → wheeled vehicle |
+| `@`, `@i` | X → hypernym (broader) | dog → canine |
+| `~`, `~i` | X → hyponym (narrower) | dog → puppy |
+| `!` | X → antonym | good → bad |
+| `&` | X → similar | |
+| `^` | X → also see | |
+| `+` | X → derivationally related form | |
+| `=` | X → attribute | |
+| `*`, `>` | X → entailment / cause (forward only; invert for the reverse) | |
+| `$` | verb group | |
+| `\` | derived from adjective | |
+| `<` | participle of verb | |
+| `;c`/`-c`, `;r`/`-r`, `;u`/`-u` | domain topic/region/usage and their members | |
+
+Note the meronym pair reads backwards from the symbols: `%` points from
+the whole to its parts, `#` from the part to the whole.
+
 ## Content flags (taboo/offensive filtering)
 
 The canonical DB keeps every entry and flags taboo/offensive ones;

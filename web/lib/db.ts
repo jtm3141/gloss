@@ -4,13 +4,42 @@
 
 import type { Database, QueryResult } from "sql.js";
 
+export interface RelatedGroup {
+  label: string;
+  words: string[]; // up to MAX_RELATED_SHOWN, most relevant first
+  more: number; // additional words not shown
+}
+
 export interface Sense {
   n: number; // WordNet sense number (1 = most common)
   pos: string; // n | v | a | r
   definition: string;
   examples: string[];
   synonyms: string[];
+  related: RelatedGroup[];
 }
+
+// Relation groups shown in the UI, in display order. Pointer codes are the
+// WordNet WNDB symbols stored in the relation table.
+//
+// Meronym direction, verified 2026-09-13 against OEWN's native WN-LMF XML
+// (english-wordnet-2024.xml.gz): the car synset carries native `mero_part`
+// relations to its 30 part synsets, and the WNDB export encodes exactly those
+// as `%p`. So in this database `%m/%s/%p` point from the whole to its parts
+// ("X has part Y") and `#m/#s/#p` point from the part to the whole
+// ("X is part of Y") — the reverse of the naive reading of the symbols.
+const REL_GROUPS: { ptrs: string[]; label: string }[] = [
+  { ptrs: ["@", "@i"], label: "Broader" },
+  { ptrs: ["~", "~i"], label: "Narrower" },
+  { ptrs: ["!"], label: "Opposites" },
+  { ptrs: ["&"], label: "Similar" },
+  { ptrs: ["%m", "%s", "%p"], label: "Parts" },
+  { ptrs: ["#m", "#s", "#p"], label: "Part of" },
+  { ptrs: ["^"], label: "See also" },
+  { ptrs: ["+"], label: "Related forms" },
+];
+
+const MAX_RELATED_SHOWN = 12;
 
 export interface Definition {
   word: string;
@@ -61,11 +90,15 @@ export async function defineWord(raw: string): Promise<Definition | null> {
   if (!word) return null;
   const db = await loadDb();
   // One query: senses for every (lemma, pos) row matching the word,
-  // left-joined to the synset's member words for synonyms.
+  // left-joined to the synset's member words for synonyms, plus the word's
+  // own 0-based position in each synset (to resolve word-level relations).
   const rs = rows(
     db.exec(
       `SELECT s.sense_no AS n, s.pos AS pos, s.definition AS definition,
-              s.examples AS examples, sw.word AS w, sw.word_pos AS wp
+              s.examples AS examples, s.synset_offset AS so, sw.word AS w, sw.word_pos AS wp,
+              (SELECT w2.word_pos FROM synset_word w2
+               WHERE w2.synset_offset = s.synset_offset AND w2.pos = s.pos
+                 AND w2.lemma_id = s.lemma_id) AS src_wp
        FROM sense s
        JOIN lemma l ON l.id = s.lemma_id
        LEFT JOIN synset_word sw
@@ -76,27 +109,94 @@ export async function defineWord(raw: string): Promise<Definition | null> {
   );
   if (rs.length === 0) return null;
 
-  const bySense = new Map<string, Sense>();
+  const bySense = new Map<string, Sense & { key: string; so: number; srcWp: number }>();
   for (const r of rs) {
     const key = `${r.pos}:${r.n}`;
     let s = bySense.get(key);
     if (!s) {
       s = {
+        key,
         n: r.n as number,
         pos: r.pos as string,
+        so: r.so as number,
+        srcWp: (r.src_wp as number) ?? 0,
         definition: (r.definition as string) ?? "",
         examples: parseExamples(r.examples as string | null),
         synonyms: [],
+        related: [],
       };
       bySense.set(key, s);
     }
-    const w = (r.w as string | null)?.toLowerCase();
-    if (w && w !== word && !s.synonyms.includes(w)) s.synonyms.push(w);
+    const w = r.w as string | null;
+    if (w && w.toLowerCase() !== word && !s.synonyms.some((x) => x.toLowerCase() === w.toLowerCase()))
+      s.synonyms.push(w);
   }
+
+  attachRelated(db, [...bySense.values()]);
+
   const senses = [...bySense.values()].sort(
     (a, b) => POS_RANK[a.pos] - POS_RANK[b.pos] || a.n - b.n
   );
   return { word, senses };
+}
+
+// Fills in sense.related from the relation table. relation.from_word/to_word
+// are 1-based word indexes (0 = the whole synset); synset_word.word_pos is
+// 0-based, so a word-level relation applies when from_word == srcWp + 1.
+function attachRelated(
+  db: Database,
+  senses: (Sense & { key: string; so: number; srcWp: number })[]
+): void {
+  if (senses.length === 0) return;
+  const pairs = senses.map((s) => `(${s.so}, '${s.pos}')`).join(", ");
+  const rs = rows(
+    db.exec(
+      `SELECT r.ptr AS ptr, r.from_word AS fw, r.to_word AS tw,
+              r.from_offset AS fo, r.from_pos AS fp, sw.word AS w
+       FROM relation r
+       JOIN synset_word sw ON sw.synset_offset = r.to_offset AND sw.pos = r.to_pos
+       WHERE (r.from_offset, r.from_pos) IN (${pairs})
+       ORDER BY sw.word_pos`
+    )[0]
+  );
+  const bySynset = new Map<string, typeof rs>();
+  for (const r of rs) {
+    const k = `${r.fp}:${r.fo}`;
+    if (!bySynset.has(k)) bySynset.set(k, []);
+    bySynset.get(k)!.push(r);
+  }
+  const groupOf = new Map<string, string>();
+  for (const g of REL_GROUPS) for (const p of g.ptrs) groupOf.set(p, g.label);
+
+  for (const s of senses) {
+    const rels = bySynset.get(`${s.pos}:${s.so}`) ?? [];
+    const buckets = new Map<string, string[]>();
+    for (const r of rels) {
+      const label = groupOf.get(r.ptr as string);
+      if (!label) continue;
+      if ((r.fw as number) !== 0 && (r.fw as number) !== s.srcWp + 1) continue;
+      const w = r.w as string;
+      if (!w) continue;
+      // A word-level target names the exact word (to_word is 1-based);
+      // surface it ahead of its synset-mates.
+      const bucket = buckets.get(label) ?? [];
+      const tw = r.tw as number;
+      const isTarget = tw !== 0;
+      if (!bucket.some((x) => x.toLowerCase() === w.toLowerCase())) {
+        if (isTarget) bucket.unshift(w);
+        else bucket.push(w);
+      }
+      buckets.set(label, bucket);
+    }
+    s.related = REL_GROUPS.filter((g) => buckets.has(g.label)).map((g) => {
+      const words = buckets.get(g.label)!;
+      return {
+        label: g.label,
+        words: words.slice(0, MAX_RELATED_SHOWN),
+        more: Math.max(0, words.length - MAX_RELATED_SHOWN),
+      };
+    });
+  }
 }
 
 function parseExamples(raw: string | null): string[] {

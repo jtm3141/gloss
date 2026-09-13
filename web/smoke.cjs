@@ -58,7 +58,70 @@ const here = __dirname;
   console.log(`lemma 'jap' rows: ${slur}`);
   if (slur !== 0) throw new Error("slur 'jap' present in filtered build");
 
-  // suggest()
+  // related words: replicate the app's attachRelated() grouping
+  const REL_GROUPS = [
+    { ptrs: ["@", "@i"], label: "Broader" },
+    { ptrs: ["~", "~i"], label: "Narrower" },
+    { ptrs: ["!"], label: "Opposites" },
+    { ptrs: ["&"], label: "Similar" },
+    { ptrs: ["%m", "%s", "%p"], label: "Parts" }, // whole -> part (verified vs native XML)
+    { ptrs: ["#m", "#s", "#p"], label: "Part of" }, // part -> whole
+    { ptrs: ["^"], label: "See also" },
+    { ptrs: ["+"], label: "Related forms" },
+  ];
+  const groupOf = new Map();
+  for (const g of REL_GROUPS) for (const p of g.ptrs) groupOf.set(p, g.label);
+
+  function related(so, pos, srcWp) {
+    const rws = q(
+      `SELECT r.ptr AS ptr, r.from_word AS fw, r.to_word AS tw, sw.word AS w
+       FROM relation r JOIN synset_word sw
+         ON sw.synset_offset = r.to_offset AND sw.pos = r.to_pos
+       WHERE r.from_offset = ${so} AND r.from_pos = '${pos}'
+       ORDER BY sw.word_pos`
+    );
+    const buckets = new Map();
+    for (const r of rws) {
+      const label = groupOf.get(r.ptr);
+      if (!label) continue;
+      if (r.fw !== 0 && r.fw !== srcWp + 1) continue;
+      const b = buckets.get(label) || [];
+      if (!b.some((x) => x.toLowerCase() === r.w.toLowerCase())) {
+        if (r.tw !== 0) b.unshift(r.w);
+        else b.push(r.w);
+      }
+      buckets.set(label, b);
+    }
+    return [...buckets.entries()].map(([label, words]) => ({ label, words }));
+  }
+
+  const dogSo = q(
+    `SELECT s.synset_offset AS so,
+            (SELECT w2.word_pos FROM synset_word w2
+             WHERE w2.synset_offset = s.synset_offset AND w2.pos = s.pos
+               AND w2.lemma_id = s.lemma_id) AS srcWp
+     FROM sense s JOIN lemma l ON l.id = s.lemma_id
+     WHERE l.lemma = 'dog' AND s.pos = 'n' AND s.sense_no = 1`
+  )[0];
+  const dogRel = related(dogSo.so, "n", dogSo.srcWp);
+  console.log("dog sense 1 related:", JSON.stringify(dogRel.map((g) => [g.label, g.words.slice(0, 4)])));
+  const broader = (dogRel.find((g) => g.label === "Broader") || { words: [] }).words;
+  if (!broader.some((w) => w.toLowerCase() === "canine"))
+    throw new Error("dog hypernym 'canine' missing");
+
+  const goodSo = q(
+    `SELECT s.synset_offset AS so,
+            (SELECT w2.word_pos FROM synset_word w2
+             WHERE w2.synset_offset = s.synset_offset AND w2.pos = s.pos
+               AND w2.lemma_id = s.lemma_id) AS srcWp
+     FROM sense s JOIN lemma l ON l.id = s.lemma_id
+     WHERE l.lemma = 'good' AND s.pos = 'a' AND s.sense_no = 1`
+  )[0];
+  const goodRel = related(goodSo.so, "a", goodSo.srcWp);
+  const opposites = (goodRel.find((g) => g.label === "Opposites") || { words: [] }).words;
+  console.log("good sense 1 opposites:", JSON.stringify(opposites.slice(0, 4)));
+  if (!opposites.some((w) => w.toLowerCase() === "bad"))
+    throw new Error("word-level antonym good->bad missing");
   const sug = q(`SELECT DISTINCT lemma FROM lemma WHERE lemma LIKE 'dogg%' ESCAPE '\\' ORDER BY LENGTH(lemma), lemma LIMIT 8`).map((r) => r.lemma);
   console.log("suggest('dogg'):", JSON.stringify(sug));
 

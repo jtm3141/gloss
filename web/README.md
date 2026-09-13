@@ -36,11 +36,11 @@ deployment has been configured yet.
 - Search box with autocomplete suggestions
 - `define(word)`: most common sense first, grouped by part of speech, with
   examples and synonyms
+- Related-word browsing: every sense shows its Broader, Narrower, Opposites,
+  Similar, Parts, Part of, See also, and Related forms as clickable words —
+  click through the graph like a thesaurus
 - Family-safe data: the filtered build (see `data/README.md` for the content
   policy). The public site never serves the unfiltered database.
-
-Planned next: related-word browsing (synonyms/hypernyms/etc. from the
-`relation` table, already shipped in the DB).
 
 ## Smoke test
 

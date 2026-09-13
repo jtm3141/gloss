@@ -79,6 +79,7 @@ export default function Home() {
   const pick = (w: string) => {
     setQuery(w);
     inputRef.current?.focus();
+    window.scrollTo({ top: 0 });
     runSearch(w);
   };
 
@@ -156,6 +157,20 @@ export default function Home() {
                         <strong>Synonyms:</strong> {s.synonyms.join(", ")}
                       </div>
                     )}
+                    {s.related.map((g) => (
+                      <div className="related" key={g.label}>
+                        <span className="rellabel">{g.label}:</span>{" "}
+                        {g.words.map((w, i) => (
+                          <span key={w}>
+                            {i > 0 && <span className="chipsep"> · </span>}
+                            <button className="chip" onClick={() => pick(w)} title={`define ${w}`}>
+                              {w}
+                            </button>
+                          </span>
+                        ))}
+                        {g.more > 0 && <span className="chipmore"> +{g.more} more</span>}
+                      </div>
+                    ))}
                   </div>
                 ))}
               </div>

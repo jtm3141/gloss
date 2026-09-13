@@ -1,0 +1,26 @@
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+
+# Build artifacts (rebuilt by data/build_db.py — never commit the big ones)
+*.db
+*.db-journal
+*.zip
+data/wndb/
+data/*.bin
+
+# C
+build/
+*.o
+*.a
+
+# Node
+node_modules/
+
+# OS / editors
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/

@@ -73,8 +73,10 @@ def main():
     srcs = {r[0] for r in con.execute("SELECT DISTINCT source FROM content_flag")}
     srcs |= {r[0] for r in con.execute("SELECT DISTINCT source FROM content_flag_synset")}
     check(EXPECTED_SOURCES <= srcs, f"sources present: {sorted(srcs)}")
-    check(con.execute("SELECT COUNT(*) FROM content_flag WHERE source_version IS NULL OR reason IS NULL").fetchone()[0] == 0,
-          "every lemma flag has reason + source_version")
+    check(con.execute("SELECT COUNT(*) FROM content_flag WHERE source_url IS NULL OR source_license IS NULL OR source_version IS NULL OR reason IS NULL").fetchone()[0] == 0,
+          "every lemma flag has reason + source + url + license + version")
+    check(con.execute("SELECT COUNT(*) FROM content_flag_synset WHERE source_url IS NULL OR source_license IS NULL OR source_version IS NULL OR reason IS NULL").fetchone()[0] == 0,
+          "every synset flag has reason + source + url + license + version")
 
     print("== 2. known profanities flagged ==")
     for w in KNOWN_FLAGGED:
@@ -100,6 +102,23 @@ def main():
         "WHERE (synset_offset, pos) IN (SELECT offset, pos FROM synset "
         "WHERE definition LIKE '%offensive and disparaging term for Black man%')").fetchall()
     check(len(slur) == 1, f"'boy' slur synset is synset-flagged ({slur})")
+
+    print("== 4b. 'black person' vs 'blackamoor' ==")
+    lid_bp = lemma_id(con, "black person")
+    check(lid_bp is not None, "lemma 'black person' exists")
+    check(not con.execute("SELECT 1 FROM content_flag WHERE lemma_id = ?", (lid_bp,)).fetchone(),
+          "lemma 'black person' is NOT lemma-flagged (neutral term)")
+    check(not con.execute(
+        "SELECT 1 FROM content_flag_synset WHERE (synset_offset, pos) IN "
+        "(SELECT synset_offset, pos FROM sense WHERE lemma_id = ?)",
+        (lid_bp,)).fetchone(),
+          "'black person' synset is NOT synset-flagged")
+    lid_bm = lemma_id(con, "blackamoor")
+    check(lid_bm is not None, "lemma 'blackamoor' exists")
+    r = con.execute("SELECT source FROM content_flag WHERE lemma_id = ?",
+                    (lid_bm,)).fetchone()
+    check(r is not None and r[0] == "oewn-slur-domain",
+          f"'blackamoor' is lemma-flagged via oewn-slur-domain ({r})")
 
     print("== 5. filtered build ==")
     check(lemma_id(con, "dog") is not None, "lemma 'dog' exists")
@@ -133,6 +152,26 @@ def main():
         check(boy_f is not None, "'boy' lemma survives filtering")
         boy_senses = f.execute("SELECT COUNT(*) FROM sense WHERE lemma_id = ?", (boy_f[0],)).fetchone()[0]
         check(boy_senses > 0, f"'boy' keeps {boy_senses} clean senses")
+        bp_f = f.execute("SELECT id FROM lemma WHERE lemma='black person'").fetchone()
+        check(bp_f is not None, "'black person' lemma survives filtering")
+        check(f.execute("SELECT COUNT(*) FROM sense WHERE lemma_id = ?",
+                        (bp_f[0],)).fetchone()[0] == 1,
+              "'black person' keeps its sense")
+        check(f.execute("SELECT COUNT(*) FROM lemma WHERE lemma='blackamoor'").fetchone()[0] == 0,
+              "'blackamoor' removed by filtering")
+        cr_id = lemma_id(con, "cracker")
+        cr_before = con.execute("SELECT COUNT(*) FROM sense WHERE lemma_id = ?",
+                                (cr_id,)).fetchone()[0]
+        cr_f = f.execute("SELECT id FROM lemma WHERE lemma='cracker'").fetchone()
+        check(cr_f is not None, "'cracker' lemma survives filtering")
+        cr_after = f.execute("SELECT COUNT(*) FROM sense WHERE lemma_id = ?",
+                             (cr_f[0],)).fetchone()[0]
+        check(cr_after == cr_before - 1,
+              f"'cracker' lost only its slur sense ({cr_before} -> {cr_after})")
+        check(f.execute("SELECT COUNT(*) FROM sense WHERE NOT EXISTS "
+                        "(SELECT 1 FROM synset s WHERE s.offset = sense.synset_offset "
+                        "AND s.pos = sense.pos)").fetchone()[0] == 0,
+              "no sense orphaned across (offset, pos)")
         check(report["removed"]["synset"] > 0 and report["removed"]["lemma"] > 0,
               f"removals happened: {report['removed']}")
         f.close()

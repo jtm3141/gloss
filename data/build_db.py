@@ -90,6 +90,8 @@ CREATE TABLE content_flag(
     lemma_id INTEGER PRIMARY KEY REFERENCES lemma(id),
     reason TEXT NOT NULL,
     source TEXT NOT NULL,            -- e.g. dsojevic/profanity-list
+    source_url TEXT NOT NULL,        -- where the source was fetched
+    source_license TEXT NOT NULL,    -- redistribution license, verified
     category TEXT,                   -- comma-joined source tags, when present
     severity INTEGER,                -- 1 mild .. 4 severe, when the source rates it
     source_version TEXT NOT NULL     -- source date + content hash
@@ -99,6 +101,9 @@ CREATE TABLE content_flag_synset(
     pos TEXT NOT NULL,
     reason TEXT NOT NULL,
     source TEXT NOT NULL,            -- oewn-usage-label | oewn-slur-domain
+    source_url TEXT NOT NULL,
+    source_license TEXT NOT NULL,
+    source_version TEXT NOT NULL,
     PRIMARY KEY(synset_offset, pos)
 );
 -- Word order inside each synset (0 = first/most representative word).

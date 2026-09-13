@@ -60,7 +60,8 @@ def make_filtered(src, out):
                 "(SELECT 1 FROM synset_word w WHERE w.synset_offset = synset.offset "
                 "AND w.pos = synset.pos)")
     con.execute("DELETE FROM sense WHERE NOT EXISTS "
-                "(SELECT 1 FROM synset s WHERE s.offset = sense.synset_offset)")
+                "(SELECT 1 FROM synset s WHERE s.offset = sense.synset_offset "
+                "AND s.pos = sense.pos)")
     #    (satellite adjectives are already merged to 'a' in the build)
     con.execute("DELETE FROM relation WHERE NOT EXISTS "
                 "(SELECT 1 FROM synset s WHERE s.offset = relation.from_offset "

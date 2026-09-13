@@ -82,13 +82,20 @@ Pipeline:
     python data/test_safety.py              # safety suite (must be green)
     python data/make_filtered.py --db data/gloss.db --out data/gloss-filtered.db
 
-Current population (OEWN 2024): 247 lemma flags (213 dsojevic/profanity-list
-MIT, 34 LDNOOBW CC-BY-4.0) + 45 synset flags (42 OEWN usage-label, 3 OEWN
-ethnic-slur-domain). Filtered build removes 298 lemmas, 460 senses,
-157 synsets, 1118 relations; foreign-key clean. Design rules: anchored
-whole-headword matching only (never substring — "sparse", "manuscript",
-"Scunthorpe" stay safe); dsojevic `exceptions` honored; plain `(slang)`
-labels are not offensive; source URL/license/version recorded on every row.
+Current population (OEWN 2024): 248 lemma flags (213 dsojevic/profanity-list
+MIT, 34 LDNOOBW CC-BY-4.0, 1 OEWN slur-domain) + 43 synset flags
+(42 OEWN usage-label, 1 OEWN slur-domain). Filtered build removes
+297 lemmas, 459 senses, 156 synsets, 1104 relations; foreign-key clean.
+Design rules: anchored whole-headword matching only (never substring —
+"sparse", "manuscript", "Scunthorpe" stay safe); dsojevic `exceptions`
+honored; plain `(slang)` labels are not offensive; source URL/license/
+version recorded on every flag row. The ethnic-slur usage domain is
+resolved per synset, not blanket-applied: OEWN links synsets (not
+senses) to the domain, so a neutrally-defined synset in the domain is
+routed by audit — whole-synset only when every member is a slur in
+that sense (redneck/cracker), lemma-level otherwise ('blackamoor'
+flagged, neutral 'black person' survives). Unlisted cases fail the
+build rather than silently dropping neutral content.
 
 ## Known limitations
 

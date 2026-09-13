@@ -21,8 +21,12 @@ Three sources, all fetched as versioned downloads (never scraped):
 3. OEWN-native usage signals -- CC-BY 4.0, same license as the corpus:
    definition usage labels ("(ethnic slur)", "(vulgar)", ...) and
    `exemplifies` links into the "ethnic slur" usage-domain synset.
-   These are sense-aware, so they populate content_flag_synset and NEVER
-   content_flag: flagging the lemma "boy" would nuke its clean senses.
+   Usage labels are sense-aware: they populate content_flag_synset, so
+   flagging one sense never nukes a lemma's clean senses (that's what
+   keeps "boy" definable). Domain links are routed per synset (see
+   SLUR_DOMAIN_RESOLUTION): whole-synset only when every member is a
+   slur in that sense, lemma-level otherwise -- a neutral synset is
+   never silently dropped.
 
 License notices for (1) and (2) live in ATTRIBUTION.md. The source URL,
 license, version (date + sha256) and reason are recorded on every flag
@@ -162,8 +166,11 @@ def main():
     lemmas = [(r[0], r[1].lower())
               for r in con.execute("SELECT id, lemma FROM lemma")]
 
-    flags = {}          # lemma_id -> (reason, source, category, severity, version)
+    flags = {}          # lemma_id -> (reason, source, url, license, category, severity, version)
     src_versions = []   # for the meta table
+    lemma_by_text = {}
+    for lid, text in lemmas:
+        lemma_by_text.setdefault(text, lid)
 
     # --- 1. dsojevic/profanity-list -------------------------------------
     src = SOURCES[0]
@@ -202,7 +209,8 @@ def main():
             flags[lid] = (
                 f"dsojevic/profanity-list id={hit['id']} "
                 f"tags=[{tags}] severity={hit['severity']}",
-                src["name"], tags or None, hit["severity"], version)
+                src["name"], src["url"], src["license"],
+                tags or None, hit["severity"], version)
             n_ds += 1
     print(f"dsojevic/profanity-list: {len(entries)} entries -> {n_ds} lemma flags")
 
@@ -215,28 +223,49 @@ def main():
                          "license": src["license"], "version": version})
     words = {ln.strip().lower() for ln in raw.decode("utf-8").splitlines()
              if ln.strip()}
-    lemma_by_text = {}
-    for lid, text in lemmas:
-        lemma_by_text.setdefault(text, lid)
     n_ld = 0
     for w in sorted(words):
         lid = lemma_by_text.get(w)
         if lid is not None and lid not in flags:
             flags[lid] = (f"LDNOOBW list entry {w!r}", src["name"],
-                          None, None, version)
+                          src["url"], src["license"], None, None, version)
             n_ld += 1
     print(f"LDNOOBW: {len(words)} entries -> {n_ld} new lemma flags")
 
-    # --- 3. OEWN-native usage signals (synset-level) ----------------------
-    syn_flags = {}  # (offset, pos) -> (reason, source)
+    # --- 3. OEWN-native usage signals ----------------------------------
+    oewn_url = "https://en-word.net/"
+    oewn_license = "CC-BY-4.0"
+    oewn_version = "oewn-2024 (released 2024-11-01)"
+    syn_flags = {}  # (offset, pos) -> (reason, source, url, license, version)
     n_label = 0
     for off, pos, definition in con.execute(
             "SELECT offset, pos, definition FROM synset"):
         lab = usage_label(definition)
         if lab:
             syn_flags[(off, pos)] = (
-                f"oewn usage label {lab}", "oewn-usage-label")
+                f"oewn usage label {lab}", "oewn-usage-label",
+                oewn_url, oewn_license, oewn_version)
             n_label += 1
+    # Domain links: OEWN attaches exemplifies-to-slur-domain at the SYNSET
+    # level (verified against the native 2024 WN-LMF: 0 sense-level
+    # exemplifies to the domain), so a neutrally-defined synset in the
+    # domain is NOT automatically a slur synset. 13 of the 16 linked
+    # synsets carry an explicit "(ethnic slur)" label and are flagged
+    # above. The rest are routed here, curated and audited:
+    #   'synset' -> every member is a slur in this sense: flag the synset.
+    #   [lemmas] -> only these members are slurs: flag them at lemma level.
+    # Anything unlisted fails the build loudly -- never silently nuke a
+    # neutral synset.
+    SLUR_DOMAIN_RESOLUTION = {
+        # (10710371,n) "a poor White person in the southern United States":
+        # both members are slurs in this sense. cracker's food senses live
+        # in other synsets and survive a synset-level flag.
+        (10710371, "n"): "synset",
+        # (15665059,n) "a person with dark skin who comes from Africa":
+        # 'black person' is the neutral term; only 'blackamoor' (1 sense,
+        # the slur sense) is flagged, at lemma level.
+        (15665059, "n"): ["blackamoor"],
+    }
     dom = con.execute(
         """SELECT s.offset, s.pos FROM synset s
            JOIN synset_word w ON w.synset_offset = s.offset AND w.pos = s.pos
@@ -248,25 +277,52 @@ def main():
                 "SELECT DISTINCT from_offset, from_pos FROM relation "
                 "WHERE ptr = ';u' AND to_offset = ? AND to_pos = ?",
                 dom):
-            if (off, pos) not in syn_flags:
+            if (off, pos) in syn_flags:
+                continue  # usage-label rule already flagged it
+            members = [r[0] for r in con.execute(
+                "SELECT word FROM synset_word WHERE synset_offset = ? "
+                "AND pos = ? ORDER BY word_pos", (off, pos))]
+            if members and all(lemma_by_text.get(m) in flags
+                               for m in members):
+                continue  # every member already lemma-flagged: redundant
+            res = SLUR_DOMAIN_RESOLUTION.get((off, pos))
+            if res is None:
+                raise SystemExit(
+                    f"UNRESOLVED slur-domain synset ({off},{pos}) {members}: "
+                    "audit it and add to SLUR_DOMAIN_RESOLUTION")
+            if res == "synset":
                 syn_flags[(off, pos)] = (
-                    "oewn exemplifies link to the 'ethnic slur' usage domain",
-                    "oewn-slur-domain")
-                n_dom += 1
+                    "oewn exemplifies link to the 'ethnic slur' usage domain "
+                    "(curated: every member is a slur in this sense)",
+                    "oewn-slur-domain", oewn_url, oewn_license, oewn_version)
+            else:
+                for m in res:
+                    lid = lemma_by_text.get(m)
+                    if lid is None:
+                        raise SystemExit(
+                            f"resolution lemma {m!r} for ({off},{pos}) "
+                            "not found in db")
+                    flags.setdefault(lid, (
+                        f"oewn slur-domain synset ({off},{pos}): {m!r} is "
+                        "the slur member (curated)",
+                        "oewn-slur-domain", oewn_url, oewn_license,
+                        None, None, oewn_version))
+            n_dom += 1
     else:
         print("  WARNING: ethnic-slur domain synset not found", file=sys.stderr)
-    print(f"oewn-native: {n_label} usage-label synsets + {n_dom} slur-domain synsets")
+    print(f"oewn-native: {n_label} usage-label synsets + {n_dom} slur-domain resolutions")
 
     # --- write ------------------------------------------------------------
     con.execute("DELETE FROM content_flag")
     con.execute("DELETE FROM content_flag_synset")
     con.executemany(
-        "INSERT INTO content_flag(lemma_id, reason, source, category, "
-        "severity, source_version) VALUES(?,?,?,?,?,?)",
+        "INSERT INTO content_flag(lemma_id, reason, source, source_url, "
+        "source_license, category, severity, source_version) "
+        "VALUES(?,?,?,?,?,?,?,?)",
         [(lid,) + v for lid, v in flags.items()])
     con.executemany(
-        "INSERT INTO content_flag_synset(synset_offset, pos, reason, source) "
-        "VALUES(?,?,?,?)",
+        "INSERT INTO content_flag_synset(synset_offset, pos, reason, source, "
+        "source_url, source_license, source_version) VALUES(?,?,?,?,?,?,?)",
         [(off, pos) + v for (off, pos), v in syn_flags.items()])
     con.execute("DELETE FROM meta WHERE key LIKE 'content_flag%'")
     con.executemany("INSERT INTO meta(key, value) VALUES(?,?)", [
@@ -279,7 +335,7 @@ def main():
     print(f"\ncontent_flag rows:         {len(flags)}")
     print(f"content_flag_synset rows:  {len(syn_flags)}")
     print("\nOEWN-native synset flags (full audit list):")
-    for (off, pos), (reason, source) in sorted(syn_flags.items()):
+    for (off, pos), (reason, source, _u, _l, _v) in sorted(syn_flags.items()):
         words = [r[0] for r in con.execute(
             "SELECT word FROM synset_word WHERE synset_offset = ? AND pos = ? "
             "ORDER BY word_pos LIMIT 6", (off, pos))]

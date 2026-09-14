@@ -221,6 +221,23 @@ button.define:hover {
   font-style: italic;
 }
 
+.copybtn {
+  background: none;
+  border: none;
+  padding: 0;
+  margin-top: 6px;
+  font-size: 12.5px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: #bbb;
+  cursor: pointer;
+}
+
+.copybtn:hover {
+  color: #555;
+}
+
 .notfound {
   margin-top: 32px;
   text-align: center;

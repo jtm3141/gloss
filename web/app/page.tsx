@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useRef, useState } from "react";
-import { defineWord, suggest, loadDb, dbMeta, type Definition, type DbStatus } from "@/lib/db";
+import { defineWord, suggest, loadDb, dbMeta, type Definition, type Sense, type DbStatus } from "@/lib/db";
 
 const POS_NAMES: Record<string, string> = {
   n: "noun",
@@ -9,6 +9,65 @@ const POS_NAMES: Record<string, string> = {
   a: "adjective",
   r: "adverb",
 };
+
+// Plain-text rendering of one sense, for the clipboard. Ends with an
+// attribution line: OEWN is CC-BY 4.0, so copied text carries its source.
+function senseText(word: string, posLabel: string, s: Sense): string {
+  const lines = [`${word} \u2014 ${posLabel}, sense ${s.n}`, s.definition];
+  if (s.synonyms.length > 0) lines.push(`Synonyms: ${s.synonyms.join(", ")}`);
+  for (const ex of s.examples) lines.push(`\u201C${ex}\u201D`);
+  lines.push("via gloss \u00B7 Open English WordNet (CC-BY 4.0)");
+  return lines.join("\n");
+}
+
+async function copyText(text: string): Promise<boolean> {
+  try {
+    if (navigator.clipboard?.writeText) {
+      await navigator.clipboard.writeText(text);
+      return true;
+    }
+  } catch {
+    /* fall through to the legacy path */
+  }
+  try {
+    const ta = document.createElement("textarea");
+    ta.value = text;
+    ta.style.position = "fixed";
+    ta.style.opacity = "0";
+    document.body.appendChild(ta);
+    ta.select();
+    const ok = document.execCommand("copy");
+    document.body.removeChild(ta);
+    return ok;
+  } catch {
+    return false;
+  }
+}
+
+function CopySenseButton({ word, posLabel, sense }: { word: string; posLabel: string; sense: Sense }) {
+  const [copied, setCopied] = useState(false);
+  const timer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  useEffect(() => () => {
+    if (timer.current) clearTimeout(timer.current);
+  }, []);
+  const onClick = async () => {
+    if (await copyText(senseText(word, posLabel, sense))) {
+      setCopied(true);
+      if (timer.current) clearTimeout(timer.current);
+      timer.current = setTimeout(() => setCopied(false), 1500);
+    }
+  };
+  return (
+    <button
+      className="copybtn"
+      onClick={onClick}
+      title="copy this sense to the clipboard"
+      aria-label={`copy sense ${sense.n} of ${word}`}
+    >
+      {copied ? "copied \u2713" : "copy"}
+    </button>
+  );
+}
 
 export default function Home() {
   const [status, setStatus] = useState<DbStatus>({ state: "loading", detail: "loading dictionary…" });
@@ -193,6 +252,7 @@ export default function Home() {
                         {g.more > 0 && <span className="chipmore"> +{g.more} more</span>}
                       </div>
                     ))}
+                    <CopySenseButton word={result.word} posLabel={POS_NAMES[pos] ?? pos} sense={s} />
                   </div>
                 ))}
               </div>

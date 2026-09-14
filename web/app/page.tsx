@@ -23,10 +23,32 @@ export default function Home() {
   const suggestTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   useEffect(() => {
-    loadDb()
-      .then(() => dbMeta().then(setMeta).catch(() => {}))
-      .then(() => setStatus({ state: "ready" }))
-      .catch((e: Error) => setStatus({ state: "error", message: e.message }));
+    let cancelled = false;
+    (async () => {
+      // The dev server can still be compiling when the page first loads and
+      // the one-shot fetch then fails; retry a few times before giving up.
+      for (let attempt = 0; ; attempt++) {
+        try {
+          await loadDb();
+          await dbMeta().then(setMeta).catch(() => {});
+          if (!cancelled) setStatus({ state: "ready" });
+          return;
+        } catch {
+          if (attempt >= 4) break;
+          if (!cancelled)
+            setStatus({ state: "loading", detail: "loading dictionary… (retrying)" });
+          await new Promise((r) => setTimeout(r, 1500));
+        }
+      }
+      if (!cancelled)
+        setStatus({
+          state: "error",
+          message: "Couldn't load the dictionary. Check your connection and refresh the page to try again.",
+        });
+    })();
+    return () => {
+      cancelled = true;
+    };
   }, []);
 
   const runSearch = useCallback(async (word: string) => {

@@ -67,8 +67,10 @@ export function loadDb(): Promise<Database> {
   if (!dbPromise) {
     dbPromise = (async () => {
       const initSqlJs = (await import("sql.js")).default;
-      const SQL = await initSqlJs({ locateFile: (f) => `/${f}` });
-      const res = await fetch("/gloss.db.gz");
+      const SQL = await initSqlJs({ locateFile: (f) => f });
+      // Relative URLs: the same bundle runs from https:// (website) and
+      // from file:// (desktop app shell).
+      const res = await fetch("gloss.db.gz");
       if (!res.ok) throw new Error(`dictionary download failed (HTTP ${res.status})`);
       const bytes = await gunzip(await res.arrayBuffer());
       return new SQL.Database(bytes);

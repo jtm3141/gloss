@@ -1,0 +1,74 @@
+{
+  "build": {
+    "appId": "com.glossdict.app",
+    "directories": {
+      "output": "release"
+    },
+    "files": [
+      "main.js",
+      "package.json",
+      "web/**/*"
+    ],
+    "linux": {
+      "category": "Education",
+      "icon": "assets/icon.png",
+      "target": [
+        {
+          "arch": [
+            "x64"
+          ],
+          "target": "AppImage"
+        }
+      ]
+    },
+    "mac": {
+      "category": "public.app-category.reference",
+      "icon": "assets/icon.icns",
+      "target": [
+        {
+          "arch": [
+            "x64",
+            "arm64"
+          ],
+          "target": "dmg"
+        }
+      ]
+    },
+    "nsis": {
+      "allowToChangeInstallationDirectory": false,
+      "createDesktopShortcut": true,
+      "createStartMenuShortcut": true,
+      "oneClick": true,
+      "perMachine": false,
+      "shortcutName": "gloss"
+    },
+    "productName": "gloss",
+    "win": {
+      "icon": "assets/icon.ico",
+      "target": [
+        {
+          "arch": [
+            "x64"
+          ],
+          "target": "nsis"
+        }
+      ]
+    }
+  },
+  "description": "gloss desktop app \u2014 the same dictionary as the website, in a native window",
+  "devDependencies": {
+    "electron": "^36.0.0",
+    "electron-builder": "^26.0.0"
+  },
+  "main": "main.js",
+  "name": "gloss-desktop",
+  "private": true,
+  "scripts": {
+    "copy-web": "node scripts/copy-web.mjs",
+    "dist": "npm run copy-web && electron-builder --win --publish never",
+    "pack": "npm run copy-web && electron-builder --dir --publish never",
+    "smoke": "electron smoke.cjs"
+  },
+  "version": "0.1.0",
+  "author": "gloss"
+}

@@ -13,10 +13,10 @@ const POS_NAMES: Record<string, string> = {
 // Plain-text rendering of one sense, for the clipboard. Ends with an
 // attribution line: OEWN is CC-BY 4.0, so copied text carries its source.
 function senseText(word: string, posLabel: string, s: Sense): string {
-  const lines = [`${word} \u2014 ${posLabel}, sense ${s.n}`, s.definition];
+  const lines = [`${word} — ${posLabel}, sense ${s.n}`, s.definition];
   if (s.synonyms.length > 0) lines.push(`Synonyms: ${s.synonyms.join(", ")}`);
-  for (const ex of s.examples) lines.push(`\u201C${ex}\u201D`);
-  lines.push("via gloss \u00B7 Open English WordNet (CC-BY 4.0)");
+  for (const ex of s.examples) lines.push(`“${ex}”`);
+  lines.push("via gloss · Open English WordNet (CC-BY 4.0)");
   return lines.join("\n");
 }
 
@@ -61,16 +61,16 @@ function CopySenseButton({ word, posLabel, sense }: { word: string; posLabel: st
     <button
       className="copybtn"
       onClick={onClick}
-      title="copy this sense to the clipboard"
-      aria-label={`copy sense ${sense.n} of ${word}`}
+      title="Copy this sense to the clipboard"
+      aria-label={`Copy sense ${sense.n} of ${word}`}
     >
-      {copied ? "copied \u2713" : "copy"}
+      {copied ? "Copied ✓" : "Copy"}
     </button>
   );
 }
 
 export default function Home() {
-  const [status, setStatus] = useState<DbStatus>({ state: "loading", detail: "loading dictionary…" });
+  const [status, setStatus] = useState<DbStatus>({ state: "loading", detail: "Loading dictionary…" });
   const [query, setQuery] = useState("");
   const [suggestions, setSuggestions] = useState<string[]>([]);
   const [activeSug, setActiveSug] = useState(-1);
@@ -95,7 +95,7 @@ export default function Home() {
         } catch {
           if (attempt >= 4) break;
           if (!cancelled)
-            setStatus({ state: "loading", detail: "loading dictionary… (retrying)" });
+            setStatus({ state: "loading", detail: "Loading dictionary… (retrying)" });
           await new Promise((r) => setTimeout(r, 1500));
         }
       }
@@ -183,8 +183,12 @@ export default function Home() {
               ref={inputRef}
               type="text"
               value={query}
-              placeholder="look up a word"
-              aria-label="word to define"
+              placeholder="Look up a word"
+              aria-label="Word to define"
+              aria-expanded={suggestions.length > 0}
+              aria-controls="search-suggestions"
+              role="combobox"
+              aria-autocomplete="list"
               autoFocus
               autoCapitalize="off"
               autoCorrect="off"
@@ -194,14 +198,16 @@ export default function Home() {
               onBlur={() => setTimeout(() => setSuggestions([]), 120)}
             />
             <button className="define" onClick={() => runSearch(query)}>
-              define
+              Define
             </button>
           </div>
           {suggestions.length > 0 && (
-            <ul className="suggestions">
+            <ul className="suggestions" id="search-suggestions" role="listbox">
               {suggestions.map((s, i) => (
                 <li
                   key={s}
+                  role="option"
+                  aria-selected={i === activeSug}
                   className={i === activeSug ? "active" : ""}
                   onMouseDown={(e) => e.preventDefault()}
                   onClick={() => pick(s)}
@@ -213,8 +219,16 @@ export default function Home() {
             </ul>
           )}
         </div>
-        {status.state === "loading" && <div className="status">{status.detail} (one-time download, then it works offline)</div>}
-        {status.state === "error" && <div className="status error">{status.message}</div>}
+        {status.state === "loading" && (
+          <div className="status" aria-live="polite">
+            {status.detail} (one-time download, then it works offline)
+          </div>
+        )}
+        {status.state === "error" && (
+          <div className="status error" role="alert">
+            {status.message}
+          </div>
+        )}
       </div>
 
       <div className="results">
@@ -244,7 +258,7 @@ export default function Home() {
                         {g.words.map((w, i) => (
                           <span key={w}>
                             {i > 0 && <span className="chipsep"> · </span>}
-                            <button className="chip" onClick={() => pick(w)} title={`define ${w}`}>
+                            <button className="chip" onClick={() => pick(w)} title={`Define ${w}`}>
                               {w}
                             </button>
                           </span>
@@ -260,14 +274,14 @@ export default function Home() {
           </>
         )}
         {notFound && (
-          <div className="notfound">
-            No definition found for “{notFound}”. Check the spelling, or try another word.
+          <div className="notfound" aria-live="polite">
+            No results for “{notFound}”. Check the spelling, or try a simpler word.
           </div>
         )}
       </div>
 
       <div className="footer">
-        gloss · {meta.oewn_edition ? `${meta.oewn_edition} · ` : ""}family-safe build
+        gloss {meta.oewn_edition ? `${meta.oewn_edition} · ` : ""}family-safe build · free to use, no account needed
         <br />
         Data: <a href="https://github.com/mcrae-anlp/oewn">Open English WordNet</a> (CC-BY 4.0) ·
         full source, license &amp; citation details in <a href="https://github.com/jtm3141/gloss/blob/main/ATTRIBUTION.md">ATTRIBUTION.md</a>

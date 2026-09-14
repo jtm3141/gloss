@@ -1,0 +1,67 @@
+# Builds the gloss Windows desktop installer.
+#
+# The installer wraps the static website (web/out), so this job rebuilds the
+# filtered database, the website, and then packages them with electron-builder.
+# The .exe is uploaded as a workflow artifact for download.
+
+name: desktop
+on:
+  push:
+    branches: [main]
+    paths: ["web/**", "desktop/**", "data/**", ".github/workflows/desktop.yml"]
+  workflow_dispatch:
+
+jobs:
+  windows-installer:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "24"
+
+      # The one dataset: reproducible from the versioned OEWN download.
+      - name: Build gloss.db
+        run: python data/build_db.py --download
+
+      # Taboo/offensive flags: reproducible from the versioned list downloads.
+      - name: Build content flags
+        run: python data/build_flags.py --db data/gloss.db
+
+      # Family-safe build the public apps ship.
+      - name: Build filtered database
+        run: |
+          python data/make_filtered.py --db data/gloss.db --out data/gloss-filtered.db
+          python -c "import gzip,shutil; shutil.copyfileobj(open('data/gloss-filtered.db','rb'), gzip.open('data/gloss-filtered.db.gz','wb', compresslevel=9))"
+
+      - name: Build website
+        run: |
+          cd web
+          npm ci
+          npm run build
+          npm run smoke
+
+      - name: Build Windows installer
+        run: |
+          cd desktop
+          npm ci
+          npm run dist
+
+      # Loads the packaged page from file:// in a hidden window and waits for
+      # the page's own dictionary load; catches file:// URL regressions.
+      - name: Desktop shell smoke test
+        run: |
+          cd desktop
+          npx electron smoke.cjs
+
+      - name: Upload installer
+        uses: actions/upload-artifact@v4
+        with:
+          name: gloss-windows-installer
+          path: desktop/release/*.exe
+          if-no-files-found: error

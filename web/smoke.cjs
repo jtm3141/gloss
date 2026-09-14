@@ -7,6 +7,21 @@ const { fileURLToPath } = require("node:url");
 
 const here = __dirname;
 
+// The browser bundle (per sql.js's "browser" export condition) requests a
+// different wasm filename than the Node build; public/ must contain exactly
+// the file the browser will ask for, or the page fails with "both async and
+// sync fetching of the wasm failed" while this Node test still passes.
+{
+  const pkg = JSON.parse(
+    readFileSync(join(here, "node_modules", "sql.js", "package.json"), "utf8")
+  );
+  const browserJs = pkg.exports["."].browser; // e.g. ./dist/sql-wasm-browser.js
+  const browserWasm = browserJs.replace(/\.js$/, ".wasm").split("/").pop();
+  const publicWasm = join(here, "public", browserWasm);
+  readFileSync(publicWasm); // throws if prepare-data didn't stage it
+  console.log(`browser wasm staged OK: public/${browserWasm}`);
+}
+
 (async () => {
   const initSqlJs = require(join(here, "node_modules", "sql.js", "dist", "sql-wasm.js"));
   const SQL = await initSqlJs({

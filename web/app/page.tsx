@@ -64,8 +64,9 @@ const LINK_ICON = (
   </svg>
 );
 
-// Shareable URLs: ?define=<word> opens the word page, &sense=<n> jumps to
-// one sense (n is the WordNet sense number, 1 = most common). Built from the
+// Shareable URLs: ?define=<word> opens the word page, &sense=<pos><n> jumps
+// to one sense, e.g. &sense=v1 for verb sense 1 (sense numbers restart at 1
+// within each part of speech, so the pos prefix is required). Built from the
 // current location so the links work over https and file:// alike.
 function pageBase(): string {
   return window.location.href.split("?")[0].split("#")[0];
@@ -75,8 +76,16 @@ function wordUrl(word: string): string {
   return `${pageBase()}?define=${encodeURIComponent(word)}`;
 }
 
-function senseUrl(word: string, n: number): string {
-  return `${wordUrl(word)}&sense=${n}`;
+function senseUrl(word: string, pos: string, n: number): string {
+  return `${wordUrl(word)}&sense=${pos}${n}`;
+}
+
+// Parses a &sense=<pos><n> value like "v1"; null when malformed.
+function parseSenseParam(value: string | null): { pos: string; n: number } | null {
+  const m = /^([nvar])(\d+)$/.exec(value ?? "");
+  if (!m) return null;
+  const n = Number.parseInt(m[2], 10);
+  return Number.isSafeInteger(n) && n > 0 ? { pos: m[1], n } : null;
 }
 
 // Brief checkmark feedback after a successful copy.
@@ -135,10 +144,10 @@ export default function Home() {
   const [notFound, setNotFound] = useState<string | null>(null);
   const [searched, setSearched] = useState(false);
   const [meta, setMeta] = useState<Record<string, string>>({});
-  const [deepLink, setDeepLink] = useState<{ word: string; sense: number | null } | null>(null);
+  const [deepLink, setDeepLink] = useState<{ word: string; sense: { pos: string; n: number } | null } | null>(null);
   const inputRef = useRef<HTMLInputElement>(null);
   const suggestTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const pendingSense = useRef<number | null>(null);
+  const pendingSense = useRef<{ pos: string; n: number } | null>(null);
 
   useEffect(() => {
     let cancelled = false;
@@ -186,13 +195,12 @@ export default function Home() {
     }
   }, [status.state]);
 
-  // Parse a shared link (?define=<word>&sense=<n>) once on load.
+  // Parse a shared link (?define=<word>&sense=<pos><n>) once on load.
   useEffect(() => {
     const params = new URLSearchParams(window.location.search);
     const w = params.get("define")?.trim();
     if (!w) return;
-    const sn = Number.parseInt(params.get("sense") ?? "", 10);
-    setDeepLink({ word: w, sense: Number.isInteger(sn) && sn > 0 ? sn : null });
+    setDeepLink({ word: w, sense: parseSenseParam(params.get("sense")) });
     setQuery(w);
   }, []);
 
@@ -209,9 +217,9 @@ export default function Home() {
   // After results render, jump to the linked sense and flash it.
   useEffect(() => {
     if (!result || pendingSense.current == null) return;
-    const n = pendingSense.current;
+    const { pos, n } = pendingSense.current;
     pendingSense.current = null;
-    const el = document.getElementById(`sense-${n}`);
+    const el = document.getElementById(`sense-${pos}${n}`);
     if (!el) return;
     const reduceMotion = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
     el.scrollIntoView({ behavior: reduceMotion ? "auto" : "smooth", block: "center" });
@@ -350,7 +358,7 @@ export default function Home() {
               <div className="posgroup" key={pos}>
                 <div className="poslabel">{POS_NAMES[pos] ?? pos}</div>
                 {senses.map((s) => (
-                  <div className="sense" id={`sense-${s.n}`} key={`${pos}-${s.n}`}>
+                  <div className="sense" id={`sense-${s.pos}${s.n}`} key={`${pos}-${s.n}`}>
                     <div className="definition">
                       <span className="definition-text">
                         <span className="sensenum">{s.n}.</span>
@@ -359,9 +367,9 @@ export default function Home() {
                       <span className="sense-actions">
                         <CopySenseButton word={result.word} sense={s} />
                         <CopyLinkButton
-                          url={senseUrl(result.word, s.n)}
+                          url={senseUrl(result.word, s.pos, s.n)}
                           title="Copy link to this sense"
-                          ariaLabel={`Copy link to sense ${s.n} of ${result.word}`}
+                          ariaLabel={`Copy link to ${s.pos} sense ${s.n} of ${result.word}`}
                         />
                       </span>
                     </div>

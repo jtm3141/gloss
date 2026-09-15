@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useRef, useState } from "react";
-import { defineWord, suggest, loadDb, dbMeta, type Definition, type Sense, type DbStatus } from "@/lib/db";
+import { defineWord, suggest, loadDb, dbMeta, MAX_RELATED_SHOWN, type Definition, type Sense, type DbStatus } from "@/lib/db";
 
 const POS_NAMES: Record<string, string> = {
   n: "noun",
@@ -132,6 +132,46 @@ function CopyLinkButton({ url, title, ariaLabel }: { url: string; title: string;
     <button className="copybtn" onClick={onClick} title={title} aria-label={ariaLabel}>
       {copied ? CHECK_ICON : LINK_ICON}
     </button>
+  );
+}
+
+// One related-word row (Broader, Narrower, …). "+N more" expands in place
+// to reveal every word; expansion resets when the word changes (see key).
+function RelatedRow({
+  label,
+  words,
+  more,
+  onPick,
+}: {
+  label: string;
+  words: string[];
+  more: number;
+  onPick: (w: string) => void;
+}) {
+  const [expanded, setExpanded] = useState(false);
+  const shown = expanded ? words : words.slice(0, MAX_RELATED_SHOWN);
+  return (
+    <div className="related">
+      <span className="rellabel">{label}:</span>{" "}
+      {shown.map((w, i) => (
+        <span key={w}>
+          {i > 0 && <span className="chipsep"> · </span>}
+          <button className="chip" onClick={() => onPick(w)} title={`Define ${w}`}>
+            {w}
+          </button>
+        </span>
+      ))}
+      {more > 0 && (
+        <button
+          className="chipmore"
+          onClick={() => setExpanded((e) => !e)}
+          aria-expanded={expanded}
+          title={expanded ? "Show fewer" : `Show all ${words.length}`}
+        >
+          {expanded ? "show less" : `+${more} more`}
+        </button>
+      )}
+    </div>
   );
 }
 
@@ -382,18 +422,13 @@ export default function Home() {
                       </div>
                     )}
                     {s.related.map((g) => (
-                      <div className="related" key={g.label}>
-                        <span className="rellabel">{g.label}:</span>{" "}
-                        {g.words.map((w, i) => (
-                          <span key={w}>
-                            {i > 0 && <span className="chipsep"> · </span>}
-                            <button className="chip" onClick={() => pick(w)} title={`Define ${w}`}>
-                              {w}
-                            </button>
-                          </span>
-                        ))}
-                        {g.more > 0 && <span className="chipmore"> +{g.more} more</span>}
-                      </div>
+                      <RelatedRow
+                        key={`${result.word}-${pos}-${s.n}-${g.label}`}
+                        label={g.label}
+                        words={g.words}
+                        more={g.more}
+                        onPick={pick}
+                      />
                     ))}
                   </div>
                 ))}

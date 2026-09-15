@@ -6,7 +6,7 @@ import type { Database, QueryResult } from "sql.js";
 
 export interface RelatedGroup {
   label: string;
-  words: string[]; // up to MAX_RELATED_SHOWN, most relevant first
+  words: string[]; // ALL related words, most relevant first (UI truncates)
   more: number; // additional words not shown
 }
 
@@ -39,7 +39,7 @@ const REL_GROUPS: { ptrs: string[]; label: string }[] = [
   { ptrs: ["+"], label: "Related forms" },
 ];
 
-const MAX_RELATED_SHOWN = 12;
+export const MAX_RELATED_SHOWN = 12;
 
 export interface Definition {
   word: string;
@@ -194,7 +194,7 @@ function attachRelated(
       const words = buckets.get(g.label)!;
       return {
         label: g.label,
-        words: words.slice(0, MAX_RELATED_SHOWN),
+        words,
         more: Math.max(0, words.length - MAX_RELATED_SHOWN),
       };
     });

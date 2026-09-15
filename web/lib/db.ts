@@ -1,50 +1,31 @@
-// Data layer: loads the filtered gloss SQLite database in the browser via
-// sql.js (WebAssembly). The DB ships gzipped in public/ and is fetched once,
-// decompressed, and cached by the browser; after that the app works offline.
+// Data layer.
+//
+// Two flavors, chosen at build time by NEXT_PUBLIC_GLOSS_TARGET:
+//   "desktop" — static export for the Electron shell: the filtered database
+//               ships inside the app bundle and is queried in the browser
+//               via sql.js (WebAssembly). Fully offline after install.
+//   (default) — server flavor (Vercel): thin fetch() calls to /api/*, which
+//               query the database through libsql (Turso in production, a
+//               local file: URL in dev). No big download.
+//
+// Both flavors return identical shapes; the UI doesn't know which it has.
 
 import type { Database, QueryResult } from "sql.js";
+import {
+  MAX_RELATED_SHOWN,
+  groupRelated,
+  parseExamples,
+  type Definition,
+  type RelatedGroup,
+  type RelationRow,
+  type Sense,
+} from "./relations";
 
-export interface RelatedGroup {
-  label: string;
-  words: string[]; // ALL related words, most relevant first (UI truncates)
-  more: number; // additional words not shown
-}
+// Re-export the shared surface so UI imports stay on "@/lib/db".
+export type { Definition, RelatedGroup, Sense };
+export { MAX_RELATED_SHOWN };
 
-export interface Sense {
-  n: number; // WordNet sense number (1 = most common)
-  pos: string; // n | v | a | r
-  definition: string;
-  examples: string[];
-  synonyms: string[];
-  related: RelatedGroup[];
-}
-
-// Relation groups shown in the UI, in display order. Pointer codes are the
-// WordNet WNDB symbols stored in the relation table.
-//
-// Meronym direction, verified 2026-09-13 against OEWN's native WN-LMF XML
-// (english-wordnet-2024.xml.gz): the car synset carries native `mero_part`
-// relations to its 30 part synsets, and the WNDB export encodes exactly those
-// as `%p`. So in this database `%m/%s/%p` point from the whole to its parts
-// ("X has part Y") and `#m/#s/#p` point from the part to the whole
-// ("X is part of Y") — the reverse of the naive reading of the symbols.
-const REL_GROUPS: { ptrs: string[]; label: string }[] = [
-  { ptrs: ["@", "@i"], label: "Broader" },
-  { ptrs: ["~", "~i"], label: "Narrower" },
-  { ptrs: ["!"], label: "Opposites" },
-  { ptrs: ["&"], label: "Similar" },
-  { ptrs: ["%m", "%s", "%p"], label: "Parts" },
-  { ptrs: ["#m", "#s", "#p"], label: "Part of" },
-  { ptrs: ["^"], label: "See also" },
-  { ptrs: ["+"], label: "Related forms" },
-];
-
-export const MAX_RELATED_SHOWN = 12;
-
-export interface Definition {
-  word: string;
-  senses: Sense[];
-}
+export const IS_REMOTE = process.env.NEXT_PUBLIC_GLOSS_TARGET !== "desktop";
 
 export type DbStatus =
   | { state: "loading"; detail: string }
@@ -63,7 +44,10 @@ async function gunzip(data: ArrayBuffer): Promise<Uint8Array> {
   return new Uint8Array(await new Response(stream).arrayBuffer());
 }
 
-export function loadDb(): Promise<Database> {
+// Browser flavor only. In the server flavor there is no client-side database;
+// the API is always ready, so this resolves immediately.
+export function loadDb(): Promise<Database | null> {
+  if (IS_REMOTE) return Promise.resolve(null);
   if (!dbPromise) {
     dbPromise = (async () => {
       const initSqlJs = (await import("sql.js")).default;
@@ -87,10 +71,20 @@ function rows(q: QueryResult | undefined): Record<string, unknown>[] {
 
 const POS_RANK: Record<string, number> = { n: 0, v: 1, a: 2, r: 3 };
 
+async function fetchJson<T>(url: string, notFound: T | null = null): Promise<T | null> {
+  const res = await fetch(url);
+  if (res.status === 404) return notFound;
+  if (!res.ok) throw new Error(`request failed (HTTP ${res.status})`);
+  return (await res.json()) as T;
+}
+
 export async function defineWord(raw: string): Promise<Definition | null> {
   const word = raw.trim().toLowerCase();
   if (!word) return null;
-  const db = await loadDb();
+  if (IS_REMOTE) {
+    return fetchJson<Definition>(`/api/define?word=${encodeURIComponent(word)}`);
+  }
+  const db = (await loadDb())!;
   // One query: senses for every (lemma, pos) row matching the word,
   // left-joined to the synset's member words for synonyms, plus the word's
   // own 0-based position in each synset (to resolve word-level relations).
@@ -111,122 +105,68 @@ export async function defineWord(raw: string): Promise<Definition | null> {
   );
   if (rs.length === 0) return null;
 
-  const bySense = new Map<string, Sense & { key: string; so: number; srcWp: number }>();
+  const bySense = new Map<string, Sense & { so: number; srcWp: number }>();
   for (const r of rs) {
-    const key = `${r.pos}:${r.n}`;
-    let s = bySense.get(key);
+    const n = r.n as number;
+    const pos = r.pos as string;
+    const mapKey = `${pos}:${n}`;
+    let s = bySense.get(mapKey);
     if (!s) {
       s = {
-        key,
-        n: r.n as number,
-        pos: r.pos as string,
+        n,
+        pos,
         so: r.so as number,
         srcWp: (r.src_wp as number) ?? 0,
         definition: (r.definition as string) ?? "",
         examples: parseExamples(r.examples as string | null),
         synonyms: [],
-        related: [],
+        related: [] as RelatedGroup[],
       };
-      bySense.set(key, s);
+      bySense.set(mapKey, s);
     }
     const w = r.w as string | null;
     if (w && w.toLowerCase() !== word && !s.synonyms.some((x) => x.toLowerCase() === w.toLowerCase()))
       s.synonyms.push(w);
   }
+  const senses = [...bySense.values()];
 
-  attachRelated(db, [...bySense.values()]);
-
-  const senses = [...bySense.values()].sort(
-    (a, b) => POS_RANK[a.pos] - POS_RANK[b.pos] || a.n - b.n
-  );
-  return { word, senses };
-}
-
-// Fills in sense.related from the relation table. relation.from_word/to_word
-// are 1-based word indexes (0 = the whole synset); synset_word.word_pos is
-// 0-based, so a word-level relation applies when from_word == srcWp + 1.
-function attachRelated(
-  db: Database,
-  senses: (Sense & { key: string; so: number; srcWp: number })[]
-): void {
-  if (senses.length === 0) return;
-  const pairs = senses.map((s) => `(${s.so}, '${s.pos}')`).join(", ");
-  const rs = rows(
-    db.exec(
-      `SELECT r.ptr AS ptr, r.from_word AS fw, r.to_word AS tw,
-              r.from_offset AS fo, r.from_pos AS fp, sw.word AS w
-       FROM relation r
-       JOIN synset_word sw ON sw.synset_offset = r.to_offset AND sw.pos = r.to_pos
-       WHERE (r.from_offset, r.from_pos) IN (${pairs})
-       ORDER BY sw.word_pos`
-    )[0]
-  );
-  const bySynset = new Map<string, typeof rs>();
-  for (const r of rs) {
-    const k = `${r.fp}:${r.fo}`;
-    if (!bySynset.has(k)) bySynset.set(k, []);
-    bySynset.get(k)!.push(r);
-  }
-  const groupOf = new Map<string, string>();
-  for (const g of REL_GROUPS) for (const p of g.ptrs) groupOf.set(p, g.label);
-
-  for (const s of senses) {
-    const rels = bySynset.get(`${s.pos}:${s.so}`) ?? [];
-    const buckets = new Map<string, string[]>();
-    for (const r of rels) {
-      const label = groupOf.get(r.ptr as string);
-      if (!label) continue;
-      if ((r.fw as number) !== 0 && (r.fw as number) !== s.srcWp + 1) continue;
-      const w = r.w as string;
-      if (!w) continue;
-      // A word-level target names the exact word (to_word is 1-based);
-      // surface it ahead of its synset-mates.
-      const bucket = buckets.get(label) ?? [];
-      const tw = r.tw as number;
-      const isTarget = tw !== 0;
-      if (!bucket.some((x) => x.toLowerCase() === w.toLowerCase())) {
-        if (isTarget) bucket.unshift(w);
-        else bucket.push(w);
-      }
-      buckets.set(label, bucket);
-    }
-    s.related = REL_GROUPS.filter((g) => buckets.has(g.label)).map((g) => {
-      const words = buckets.get(g.label)!;
-      return {
-        label: g.label,
-        words,
-        more: Math.max(0, words.length - MAX_RELATED_SHOWN),
-      };
+  if (senses.length > 0) {
+    const pairs = senses.map((s) => `(${s.so}, '${s.pos}')`).join(", ");
+    const relRs = rows(
+      db.exec(
+        `SELECT r.ptr AS ptr, r.from_word AS fw, r.to_word AS tw,
+                r.from_offset AS fo, r.from_pos AS fp, sw.word AS w
+         FROM relation r
+         JOIN synset_word sw ON sw.synset_offset = r.to_offset AND sw.pos = r.to_pos
+         WHERE (r.from_offset, r.from_pos) IN (${pairs})
+         ORDER BY sw.word_pos`
+      )[0]
+    );
+    const grouped = groupRelated(senses, relRs as unknown as RelationRow[]);
+    senses.forEach((s, i) => {
+      s.related = grouped[i];
     });
   }
-}
 
-function parseExamples(raw: string | null): string[] {
-  if (!raw) return [];
-  const t = raw.trim();
-  // The build pipeline stores examples as a JSON array of strings.
-  if (t.startsWith("[")) {
-    try {
-      const arr: unknown = JSON.parse(t);
-      if (Array.isArray(arr)) {
-        return arr.map((p) => String(p).trim()).filter(Boolean);
-      }
-    } catch {
-      /* fall through to the lenient path */
-    }
-  }
-  const parts = t.includes("|") ? t.split("|") : [t];
-  return parts.map((p) => p.trim().replace(/^"|"$/g, "")).filter(Boolean);
+  const clean: Sense[] = senses
+    .sort((a, b) => POS_RANK[a.pos] - POS_RANK[b.pos] || a.n - b.n)
+    .map(({ so: _so, srcWp: _srcWp, ...rest }) => rest);
+  return { word, senses: clean };
 }
 
 export async function suggest(prefix: string): Promise<string[]> {
-  const p = prefix.trim().toLowerCase().replace(/[%_\\]/g, "\\$&");
+  const p = prefix.trim().toLowerCase();
   if (p.length < 2) return [];
-  const db = await loadDb();
+  if (IS_REMOTE) {
+    const res = await fetchJson<string[]>(`/api/suggest?q=${encodeURIComponent(p)}`, []);
+    return res ?? [];
+  }
+  const db = (await loadDb())!;
+  const esc = p.replace(/[%_\\]/g, "\\$&");
   const rs = rows(
     db.exec(
       `SELECT DISTINCT lemma FROM lemma
-       WHERE lemma LIKE '${p}%' ESCAPE '\\'
+       WHERE lemma LIKE '${esc}%' ESCAPE '\\'
        ORDER BY LENGTH(lemma), lemma LIMIT 8`
     )[0]
   );
@@ -234,7 +174,11 @@ export async function suggest(prefix: string): Promise<string[]> {
 }
 
 export async function dbMeta(): Promise<Record<string, string>> {
-  const db = await loadDb();
+  if (IS_REMOTE) {
+    const meta = await fetchJson<Record<string, string>>("/api/meta", {});
+    return meta ?? {};
+  }
+  const db = (await loadDb())!;
   const rs = rows(db.exec("SELECT key, value FROM meta")[0]);
   return Object.fromEntries(rs.map((r) => [r.key as string, r.value as string]));
 }

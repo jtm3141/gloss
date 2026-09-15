@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useRef, useState } from "react";
-import { defineWord, suggest, loadDb, dbMeta, MAX_RELATED_SHOWN, type Definition, type Sense, type DbStatus } from "@/lib/db";
+import { defineWord, suggest, loadDb, dbMeta, MAX_RELATED_SHOWN, IS_REMOTE, type Definition, type Sense, type DbStatus } from "@/lib/db";
 
 const POS_NAMES: Record<string, string> = {
   n: "noun",
@@ -376,7 +376,7 @@ export default function Home() {
         </div>
         {status.state === "loading" && (
           <div className="status" aria-live="polite">
-            {status.detail} (one-time download, then it works offline)
+            {status.detail}{IS_REMOTE ? "" : " (one-time download, then it works offline)"}
           </div>
         )}
         {status.state === "error" && (

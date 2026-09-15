@@ -8,3 +8,7 @@ out/
 
 # TS build info
 tsconfig.tsbuildinfo
+ 
+# Local env (never commit) 
+.env*.local 
+.api.stash/ 

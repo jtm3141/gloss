@@ -10,14 +10,11 @@ const POS_NAMES: Record<string, string> = {
   r: "adverb",
 };
 
-// Plain-text rendering of one sense, for the clipboard. Ends with an
-// attribution line: OEWN is CC-BY 4.0, so copied text carries its source.
-function senseText(word: string, posLabel: string, s: Sense): string {
-  const lines = [`${word} — ${posLabel}, sense ${s.n}`, s.definition];
-  if (s.synonyms.length > 0) lines.push(`Synonyms: ${s.synonyms.join(", ")}`);
-  for (const ex of s.examples) lines.push(`“${ex}”`);
-  lines.push("via gloss · Open English WordNet (CC-BY 4.0)");
-  return lines.join("\n");
+// Plain-text rendering of one sense, for the clipboard: just the
+// definition, followed on the same line by an em-dash attribution.
+// OEWN is CC-BY 4.0, so copied text carries its source.
+function senseText(s: Sense): string {
+  return `${s.definition} — via gloss · Open English WordNet (CC-BY 4.0)`;
 }
 
 async function copyText(text: string): Promise<boolean> {
@@ -44,14 +41,29 @@ async function copyText(text: string): Promise<boolean> {
   }
 }
 
-function CopySenseButton({ word, posLabel, sense }: { word: string; posLabel: string; sense: Sense }) {
+const COPY_ICON = (
+  <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+    strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+    <rect x="9" y="9" width="13" height="13" rx="2" ry="2" />
+    <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1" />
+  </svg>
+);
+
+const CHECK_ICON = (
+  <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+    strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+    <polyline points="20 6 9 17 4 12" />
+  </svg>
+);
+
+function CopySenseButton({ word, sense }: { word: string; sense: Sense }) {
   const [copied, setCopied] = useState(false);
   const timer = useRef<ReturnType<typeof setTimeout> | null>(null);
   useEffect(() => () => {
     if (timer.current) clearTimeout(timer.current);
   }, []);
   const onClick = async () => {
-    if (await copyText(senseText(word, posLabel, sense))) {
+    if (await copyText(senseText(sense))) {
       setCopied(true);
       if (timer.current) clearTimeout(timer.current);
       timer.current = setTimeout(() => setCopied(false), 1500);
@@ -61,10 +73,10 @@ function CopySenseButton({ word, posLabel, sense }: { word: string; posLabel: st
     <button
       className="copybtn"
       onClick={onClick}
-      title="Copy this sense to the clipboard"
-      aria-label={`Copy sense ${sense.n} of ${word}`}
+      title="Copy definition to the clipboard"
+      aria-label={`Copy definition of ${word}`}
     >
-      {copied ? "Copied ✓" : "Copy"}
+      {copied ? CHECK_ICON : COPY_ICON}
     </button>
   );
 }
@@ -243,6 +255,7 @@ export default function Home() {
                     <div className="definition">
                       <span className="sensenum">{s.n}.</span>
                       {s.definition}
+                      <CopySenseButton word={result.word} sense={s} />
                     </div>
                     {s.examples.map((ex, i) => (
                       <div className="example" key={i}>“{ex}”</div>
@@ -266,7 +279,6 @@ export default function Home() {
                         {g.more > 0 && <span className="chipmore"> +{g.more} more</span>}
                       </div>
                     ))}
-                    <CopySenseButton word={result.word} posLabel={POS_NAMES[pos] ?? pos} sense={s} />
                   </div>
                 ))}
               </div>

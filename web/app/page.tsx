@@ -56,18 +56,51 @@ const CHECK_ICON = (
   </svg>
 );
 
-function CopySenseButton({ word, sense }: { word: string; sense: Sense }) {
+const LINK_ICON = (
+  <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+    strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+    <path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71" />
+    <path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71" />
+  </svg>
+);
+
+// Shareable URLs: ?define=<word> opens the word page, &sense=<n> jumps to
+// one sense (n is the WordNet sense number, 1 = most common). Built from the
+// current location so the links work over https and file:// alike.
+function pageBase(): string {
+  return window.location.href.split("?")[0].split("#")[0];
+}
+
+function wordUrl(word: string): string {
+  return `${pageBase()}?define=${encodeURIComponent(word)}`;
+}
+
+function senseUrl(word: string, n: number): string {
+  return `${wordUrl(word)}&sense=${n}`;
+}
+
+// Brief checkmark feedback after a successful copy.
+function useCopiedFlag(): [boolean, () => void] {
   const [copied, setCopied] = useState(false);
   const timer = useRef<ReturnType<typeof setTimeout> | null>(null);
-  useEffect(() => () => {
-    if (timer.current) clearTimeout(timer.current);
-  }, []);
-  const onClick = async () => {
-    if (await copyText(senseText(sense))) {
-      setCopied(true);
+  useEffect(
+    () => () => {
       if (timer.current) clearTimeout(timer.current);
-      timer.current = setTimeout(() => setCopied(false), 1500);
-    }
+    },
+    []
+  );
+  const flag = useCallback(() => {
+    setCopied(true);
+    if (timer.current) clearTimeout(timer.current);
+    timer.current = setTimeout(() => setCopied(false), 1500);
+  }, []);
+  return [copied, flag];
+}
+
+function CopySenseButton({ word, sense }: { word: string; sense: Sense }) {
+  const [copied, flagCopied] = useCopiedFlag();
+  const onClick = async () => {
+    if (await copyText(senseText(sense))) flagCopied();
   };
   return (
     <button
@@ -81,6 +114,18 @@ function CopySenseButton({ word, sense }: { word: string; sense: Sense }) {
   );
 }
 
+function CopyLinkButton({ url, title, ariaLabel }: { url: string; title: string; ariaLabel: string }) {
+  const [copied, flagCopied] = useCopiedFlag();
+  const onClick = async () => {
+    if (await copyText(url)) flagCopied();
+  };
+  return (
+    <button className="copybtn" onClick={onClick} title={title} aria-label={ariaLabel}>
+      {copied ? CHECK_ICON : LINK_ICON}
+    </button>
+  );
+}
+
 export default function Home() {
   const [status, setStatus] = useState<DbStatus>({ state: "loading", detail: "Loading dictionary…" });
   const [query, setQuery] = useState("");
@@ -90,8 +135,10 @@ export default function Home() {
   const [notFound, setNotFound] = useState<string | null>(null);
   const [searched, setSearched] = useState(false);
   const [meta, setMeta] = useState<Record<string, string>>({});
+  const [deepLink, setDeepLink] = useState<{ word: string; sense: number | null } | null>(null);
   const inputRef = useRef<HTMLInputElement>(null);
   const suggestTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const pendingSense = useRef<number | null>(null);
 
   useEffect(() => {
     let cancelled = false;
@@ -128,6 +175,8 @@ export default function Home() {
     setSuggestions([]);
     setActiveSug(-1);
     setSearched(true);
+    // Keep the address bar shareable: it always reflects the current word.
+    window.history.replaceState(null, "", wordUrl(w));
     try {
       const def = await defineWord(w);
       setResult(def);
@@ -136,6 +185,41 @@ export default function Home() {
       setStatus({ state: "error", message: (e as Error).message });
     }
   }, [status.state]);
+
+  // Parse a shared link (?define=<word>&sense=<n>) once on load.
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    const w = params.get("define")?.trim();
+    if (!w) return;
+    const sn = Number.parseInt(params.get("sense") ?? "", 10);
+    setDeepLink({ word: w, sense: Number.isInteger(sn) && sn > 0 ? sn : null });
+    setQuery(w);
+  }, []);
+
+  // Run the shared-link search once the dictionary is ready.
+  useEffect(() => {
+    if (status.state === "ready" && deepLink) {
+      pendingSense.current = deepLink.sense;
+      const w = deepLink.word;
+      setDeepLink(null);
+      void runSearch(w);
+    }
+  }, [status.state, deepLink, runSearch]);
+
+  // After results render, jump to the linked sense and flash it.
+  useEffect(() => {
+    if (!result || pendingSense.current == null) return;
+    const n = pendingSense.current;
+    pendingSense.current = null;
+    const el = document.getElementById(`sense-${n}`);
+    if (!el) return;
+    const reduceMotion = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+    el.scrollIntoView({ behavior: reduceMotion ? "auto" : "smooth", block: "center" });
+    if (reduceMotion) return;
+    el.classList.add("sense-flash");
+    const t = setTimeout(() => el.classList.remove("sense-flash"), 1600);
+    return () => clearTimeout(t);
+  }, [result]);
 
   const onChange = (v: string) => {
     setQuery(v);
@@ -176,6 +260,14 @@ export default function Home() {
     runSearch(w);
   };
 
+  const goHome = () => {
+    setSearched(false);
+    setResult(null);
+    setNotFound(null);
+    setQuery("");
+    window.history.replaceState(null, "", pageBase());
+  };
+
   const groups = result
     ? [...new Set(result.senses.map((s) => s.pos))].map((pos) => ({
         pos,
@@ -186,7 +278,7 @@ export default function Home() {
   return (
     <div className="page">
       <div className={`hero${searched ? " compact" : ""}`}>
-        <h1 className="wordmark" onClick={() => { setSearched(false); setResult(null); setNotFound(null); setQuery(""); }}>
+        <h1 className="wordmark" onClick={goHome}>
           gloss
         </h1>
         <div className="searchbox">
@@ -246,16 +338,28 @@ export default function Home() {
       <div className="results">
         {result && (
           <>
-            <div className="wordhead">{result.word}</div>
+            <div className="wordhead">
+              {result.word}
+              <CopyLinkButton
+                url={wordUrl(result.word)}
+                title="Copy link to this word"
+                ariaLabel={`Copy link to ${result.word}`}
+              />
+            </div>
             {groups.map(({ pos, senses }) => (
               <div className="posgroup" key={pos}>
                 <div className="poslabel">{POS_NAMES[pos] ?? pos}</div>
                 {senses.map((s) => (
-                  <div className="sense" key={`${pos}-${s.n}`}>
+                  <div className="sense" id={`sense-${s.n}`} key={`${pos}-${s.n}`}>
                     <div className="definition">
                       <span className="sensenum">{s.n}.</span>
                       {s.definition}
                       <CopySenseButton word={result.word} sense={s} />
+                      <CopyLinkButton
+                        url={senseUrl(result.word, s.n)}
+                        title="Copy link to this sense"
+                        ariaLabel={`Copy link to sense ${s.n} of ${result.word}`}
+                      />
                     </div>
                     {s.examples.map((ex, i) => (
                       <div className="example" key={i}>“{ex}”</div>

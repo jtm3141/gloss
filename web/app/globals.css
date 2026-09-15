@@ -238,6 +238,8 @@ button.define:active {
 .sense {
   padding: 12px 0;
   border-bottom: 1px solid var(--border-soft);
+  /* Keep a linked sense clear of the sticky search bar when scrolled to. */
+  scroll-margin-top: 96px;
 }
 
 .sense:last-child {
@@ -248,6 +250,21 @@ button.define:active {
   font-weight: 700;
   font-variant-numeric: tabular-nums;
   margin-right: 8px;
+}
+
+/* Brief highlight for a sense opened via a shared link. */
+@keyframes sense-flash {
+  0% {
+    background-color: var(--bg-wash);
+  }
+  100% {
+    background-color: transparent;
+  }
+}
+
+.sense-flash {
+  animation: sense-flash 1.6s ease-out;
+  border-radius: 8px;
 }
 
 .definition {
@@ -501,5 +518,9 @@ button.define:active {
 
   button.define:active {
     transform: none;
+  }
+
+  .sense-flash {
+    animation: none;
   }
 }

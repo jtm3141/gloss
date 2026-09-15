@@ -268,8 +268,27 @@ button.define:active {
 }
 
 .definition {
+  display: flex;
+  align-items: flex-start;
   font-size: 17px;
   line-height: 1.55;
+}
+
+.definition-text {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
+/* Copy / copy-link icons, pinned to the right edge of the sense. */
+.sense-actions {
+  flex-shrink: 0;
+  display: inline-flex;
+  align-items: center;
+  margin-left: 12px;
+}
+
+.sense-actions .copybtn:first-child {
+  margin-left: 0;
 }
 
 .example {

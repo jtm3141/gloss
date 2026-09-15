@@ -352,14 +352,18 @@ export default function Home() {
                 {senses.map((s) => (
                   <div className="sense" id={`sense-${s.n}`} key={`${pos}-${s.n}`}>
                     <div className="definition">
-                      <span className="sensenum">{s.n}.</span>
-                      {s.definition}
-                      <CopySenseButton word={result.word} sense={s} />
-                      <CopyLinkButton
-                        url={senseUrl(result.word, s.n)}
-                        title="Copy link to this sense"
-                        ariaLabel={`Copy link to sense ${s.n} of ${result.word}`}
-                      />
+                      <span className="definition-text">
+                        <span className="sensenum">{s.n}.</span>
+                        {s.definition}
+                      </span>
+                      <span className="sense-actions">
+                        <CopySenseButton word={result.word} sense={s} />
+                        <CopyLinkButton
+                          url={senseUrl(result.word, s.n)}
+                          title="Copy link to this sense"
+                          ariaLabel={`Copy link to sense ${s.n} of ${result.word}`}
+                        />
+                      </span>
                     </div>
                     {s.examples.map((ex, i) => (
                       <div className="example" key={i}>“{ex}”</div>

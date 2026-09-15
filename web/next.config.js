@@ -2,12 +2,16 @@
 const nextConfig = {
   // Fully static: no server. The dictionary lives in the browser (sql.js).
   output: "export",
-  // Dev-only convenience: the footer links to license.html (the static-export
-  // filename, which the Electron file:// shell also needs). next dev serves
-  // the route as /license, so rewrite it there. The static export has no
-  // server and ships a real license.html, so this is ignored at export time.
+  // Dev-only convenience: internal links use the static-export filenames
+  // (license.html, index.html), which the Electron file:// shell also needs.
+  // next dev serves the routes as /license and /, so rewrite them there.
+  // The static export has no server and ships the real .html files, so these
+  // are ignored at export time.
   async rewrites() {
-    return [{ source: "/license.html", destination: "/license" }];
+    return [
+      { source: "/license.html", destination: "/license" },
+      { source: "/index.html", destination: "/" },
+    ];
   },
 };
 module.exports = nextConfig;

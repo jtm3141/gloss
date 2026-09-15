@@ -265,7 +265,10 @@ export default function Home() {
     el.scrollIntoView({ behavior: reduceMotion ? "auto" : "smooth", block: "center" });
     if (reduceMotion) return;
     el.classList.add("sense-flash");
-    const t = setTimeout(() => el.classList.remove("sense-flash"), 1600);
+    // Reduced motion: the CSS disables the animation, leaving a calm static
+    // tint (no timer removes it); otherwise the flash fades on its own.
+    if (reduceMotion) return;
+    const t = setTimeout(() => el.classList.remove("sense-flash"), 2400);
     return () => clearTimeout(t);
   }, [result]);
 

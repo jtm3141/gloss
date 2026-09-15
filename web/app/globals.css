@@ -242,6 +242,24 @@ button.define:active {
   scroll-margin-top: 96px;
 }
 
+/* Deep-link target flash: briefly marks the sense a shared ?sense= link
+   jumped to (the transient-flash pattern GitHub/Slack/MDN use for
+   followed links). Holds, then fades; no dismiss control needed. */
+@keyframes sense-flash {
+  0%, 35% { background-color: var(--accent-soft); }
+  100% { background-color: transparent; }
+}
+
+.sense-flash {
+  animation: sense-flash 2.4s ease-out;
+  border-radius: 8px;
+  /* Widen the wash past the text without moving it. */
+  padding-left: 12px;
+  padding-right: 12px;
+  margin-left: -12px;
+  margin-right: -12px;
+}
+
 .sense:last-child {
   border-bottom: none;
 }
@@ -252,19 +270,22 @@ button.define:active {
   margin-right: 8px;
 }
 
-/* Brief highlight for a sense opened via a shared link. */
+/* Deep-link target flash: briefly marks the sense a shared ?sense= link
+   jumped to (the transient-flash pattern GitHub/Slack/MDN use for
+   followed links). Holds, then fades; no dismiss control needed. */
 @keyframes sense-flash {
-  0% {
-    background-color: var(--bg-wash);
-  }
-  100% {
-    background-color: transparent;
-  }
+  0%, 35% { background-color: var(--accent-soft); }
+  100% { background-color: transparent; }
 }
 
 .sense-flash {
-  animation: sense-flash 1.6s ease-out;
+  animation: sense-flash 2.4s ease-out;
   border-radius: 8px;
+  /* Widen the wash past the text without moving it. */
+  padding-left: 12px;
+  padding-right: 12px;
+  margin-left: -12px;
+  margin-right: -12px;
 }
 
 .definition {
@@ -553,5 +574,6 @@ button.define:active {
 
   .sense-flash {
     animation: none;
+    background-color: var(--accent-soft);
   }
 }

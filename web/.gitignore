@@ -5,3 +5,6 @@ public/sql-wasm.wasm
 # Next.js
 .next/
 out/
+
+# TS build info
+tsconfig.tsbuildinfo

@@ -293,9 +293,7 @@ export default function Home() {
       </div>
 
       <div className="footer">
-        gloss {meta.oewn_edition ? `${meta.oewn_edition} · ` : ""}family-safe build · free to use, no account needed
-        <br />
-        Definitions are free to reuse with credit — data: Open English WordNet (CC-BY 4.0).{" "}
+        Definitions: Open English WordNet (CC-BY 4.0).{" "}
         <a href="license.html">License details</a>
       </div>
     </div>

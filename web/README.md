@@ -48,3 +48,11 @@ deployment has been configured yet.
 browser takes) and runs the app's define/suggest queries against it —
 `define('dog')` must return 8 senses, severity-1 survivors (jesus, damn,
 nipple) must be present, and slurs (jap) must be absent.
+
+## Dictionary data licensing
+
+Definitions come from [Open English WordNet](https://github.com/globalwordnet/english-wordnet)
+(CC-BY 4.0): free to reuse, even commercially, **with credit** — keep a line like
+"via gloss · Open English WordNet (CC-BY 4.0)" on anything you copy or redistribute.
+Full attribution, citations, and source links: `ATTRIBUTION.md` (repo root), or the
+site's License page (`/license`).

@@ -384,6 +384,63 @@ button.define:active {
   color: var(--accent-dark);
 }
 
+/* ---------- license page ---------- */
+
+.license {
+  width: 100%;
+  max-width: var(--measure);
+  padding: 48px 20px 40px;
+  line-height: 1.6;
+}
+
+.license h1 {
+  font-size: 32px;
+  margin: 0 0 8px;
+  letter-spacing: -0.01em;
+}
+
+.license h2 {
+  font-size: 19px;
+  margin: 32px 0 8px;
+}
+
+.license p {
+  margin: 0 0 12px;
+}
+
+.license ul {
+  margin: 0 0 12px;
+  padding-left: 22px;
+}
+
+.license li {
+  margin-bottom: 8px;
+}
+
+.license a {
+  color: var(--accent);
+  text-underline-offset: 2px;
+}
+
+.license a:hover {
+  color: var(--accent-dark);
+}
+
+.license code {
+  font-size: 0.9em;
+}
+
+.license .credit {
+  background: var(--bg-wash);
+  border-left: 3px solid var(--accent);
+  padding: 10px 14px;
+  font-size: 15px;
+}
+
+.license .back {
+  margin-top: 32px;
+}
+
 /* ---------- small screens ---------- */
 
 @media (max-width: 640px) {

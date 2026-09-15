@@ -283,8 +283,8 @@ export default function Home() {
       <div className="footer">
         gloss {meta.oewn_edition ? `${meta.oewn_edition} · ` : ""}family-safe build · free to use, no account needed
         <br />
-        Data: <a href="https://github.com/mcrae-anlp/oewn">Open English WordNet</a> (CC-BY 4.0) ·
-        full source, license &amp; citation details in <a href="https://github.com/jtm3141/gloss/blob/main/ATTRIBUTION.md">ATTRIBUTION.md</a>
+        Definitions are free to reuse with credit — data: Open English WordNet (CC-BY 4.0).{" "}
+        <a href="license.html">License details</a>
       </div>
     </div>
   );

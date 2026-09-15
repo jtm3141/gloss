@@ -107,3 +107,11 @@ node scripts/make-ico.mjs assets/icon.png assets/icon.ico
 ```
 
 When adding macOS support, generate `assets/icon.icns` from the same PNG.
+
+## Dictionary data licensing
+
+Definitions come from [Open English WordNet](https://github.com/globalwordnet/english-wordnet)
+(CC-BY 4.0): free to reuse, even commercially, **with credit** — keep a line like
+"via gloss · Open English WordNet (CC-BY 4.0)" on anything you copy or redistribute.
+Full attribution, citations, and source links: `ATTRIBUTION.md` (repo root), or the
+License page on the gloss website.

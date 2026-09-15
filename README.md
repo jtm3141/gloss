@@ -50,4 +50,8 @@ C:\Users\<user>\miniconda3\python.exe data\build_db.py --download
 ## License
 
 Our code: MIT (see `LICENSE`). Dictionary data: CC-BY 4.0 Open English WordNet
-(see `ATTRIBUTION.md`).
+(see `ATTRIBUTION.md`, or the License page on the gloss website).
+
+The definitions are free to reuse — including commercially — with credit: keep
+a line like "via gloss · Open English WordNet (CC-BY 4.0)" on anything you copy
+or redistribute.

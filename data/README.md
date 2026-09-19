@@ -25,6 +25,34 @@ C:\Users\<user>\miniconda3\python.exe data\build_db.py --download
 4. Validates synset counts against the edition's published numbers
    (must match within 1%) and prints a report.
 
+## Tiers: smaller databases for constrained targets
+
+`make_tier.py` builds a frequency-ranked subset of a full `gloss.db`
+(phone bundles, ESP32, …). Lemmas are ranked by an external word-frequency
+list and the top N distinct lemmas are kept, with all their POS entries.
+
+```powershell
+C:\Users\<user>\miniconda3\python.exe -m pip install wordfreq   # once
+C:\Users\<user>\miniconda3\python.exe data\make_tier.py --in data\gloss-filtered.db --out data\gloss-core.db --top-lemmas 5000 --max-senses 2 --drop-examples
+```
+
+Knobs: `--top-lemmas N` (default 5000), `--max-senses M` per lemma
+(0 = unlimited, default 2), `--drop-examples`. `--freq wordfreq:50000`
+is the default ranking source; `--freq-csv words.csv` takes your own list
+(one word per line, or `word,rank` with a header).
+
+Integrity guarantees, so tiers stay interchangeable with the full DB:
+
+- `sense_no` values are preserved, never renumbered — a deep link like
+  `?define=dog&sense=n1` means the same thing in every tier.
+- Relations whose source or target synset was dropped are pruned; the UI
+  never renders a chip that leads nowhere.
+- `content_flag` rows follow their lemmas / synsets into the tier.
+- `meta` gains `tier_*` provenance keys (`tier_name`, `tier_top_lemmas`,
+  `tier_max_senses`, `tier_drop_examples`, `tier_frequency_source`,
+  `tier_built_at`), and `build_profile` gets a tier suffix
+  (e.g. `filtered-top5000-s2-noex`).
+
 ## Relation counts: WNDB export vs native format (reconciled 2026-09-12)
 
 OEWN publishes 419,168 relations for the 2024 edition (native WN-LMF XML);

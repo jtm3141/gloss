@@ -145,6 +145,21 @@ def check_small(tmp):
     con.close()
 
 
+def check_medium(tmp):
+    con = run_tier(tmp, ["--tier", "medium"])
+    # top 25k -> all 4 freq words; unlimited senses; examples kept
+    assert lemmas(con) == {"dog", "cat", "serendipity", "zyzzyva"}
+    assert con.execute("SELECT COUNT(*) FROM sense").fetchone()[0] == 8
+    assert {r[0] for r in con.execute(
+        "SELECT sense_no FROM sense WHERE lemma_id=1")} == {1, 2, 3}
+    ex = con.execute(
+        "SELECT examples FROM sense WHERE definition LIKE '%canine%'").fetchone()[0]
+    assert ex == '["the dog barked"]', ex
+    assert con.execute("SELECT value FROM meta WHERE key='tier_name'").fetchone()[0] == "medium"
+    assert con.execute("SELECT value FROM meta WHERE key='build_profile'").fetchone()[0] == "test-canonical-medium"
+    con.close()
+
+
 def check_full(tmp):
     con = run_tier(tmp, ["--tier", "full"])
     assert con.execute("SELECT COUNT(*) FROM sense").fetchone()[0] == 8
@@ -179,6 +194,10 @@ def main():
         build_mini(os.path.join(tmp, "mini.db"))
         check_small(tmp)
         print("small preset ok")
+    with tempfile.TemporaryDirectory() as tmp:
+        build_mini(os.path.join(tmp, "mini.db"))
+        check_medium(tmp)
+        print("medium preset ok")
     with tempfile.TemporaryDirectory() as tmp:
         build_mini(os.path.join(tmp, "mini.db"))
         check_full(tmp)

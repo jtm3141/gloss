@@ -1,11 +1,12 @@
 {
   "dependencies": {
+    "@libsql/client": "^0.18.0",
     "next": "^15.1.0",
     "react": "^19.0.0",
     "react-dom": "^19.0.0",
     "sql.js": "^1.13.0"
   },
-  "description": "gloss web app \u2014 a dead-simple dictionary for everyone, everywhere",
+  "description": "gloss web app — a dead-simple dictionary for everyone, everywhere",
   "devDependencies": {
     "@types/node": "^22.0.0",
     "@types/react": "^19.0.0",

@@ -4,7 +4,26 @@
 //   std::cout << db.define("dog") << "\n";
 //   for (auto &sense : db.lookup("dog").senses) { ... }
 //
-// Throws gloss::error on misuse (unknown word -> empty optional instead).
+// ---------------------------------------------------------------------------
+// Exception contract
+//
+// Throws gloss::error on misuse:
+//   - Database(path) throws if the database cannot be opened (missing file,
+//     not a gloss.db, unreadable). The C core is read-only; a bad path is
+//     the only failure mode.
+//   - Sense::related() throws std::out_of_range (via std::vector) only if
+//     the Sense's relation coordinates are garbage — in practice they always
+//     come from Database::lookup(), so this does not happen in normal use.
+//
+// Returns without throwing on missing data:
+//   - define()/lookup() return std::nullopt for an unknown word.
+//   - search() returns an empty vector when nothing matches the prefix.
+//   - Sense::related() returns an empty vector when the sense has no such
+//     relations.
+//
+// No other exceptions are thrown by this wrapper; the C core reports every
+// lookup miss as NULL/0 and the wrapper maps those to nullopt/empty.
+// ---------------------------------------------------------------------------
 #pragma once
 
 #include <memory>
@@ -16,6 +35,19 @@
 #include "gloss.h"
 
 namespace gloss {
+
+// Wrapper version. Tracks the binding release, not the database edition
+// (the OEWN edition is stamped inside each .db's meta table).
+inline constexpr int version_major = 0;
+inline constexpr int version_minor = 2;
+inline constexpr int version_patch = 0;
+
+inline std::string version()
+{
+    return std::to_string(version_major) + "." +
+           std::to_string(version_minor) + "." +
+           std::to_string(version_patch);
+}
 
 class error : public std::runtime_error {
 public:

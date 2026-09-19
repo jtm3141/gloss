@@ -22,13 +22,13 @@ Frequency sources (exactly one):
                           or "word,rank" rows with a header.
 
 Examples:
-  # pocket dictionary: 5k most frequent lemmas, top 2 senses, no examples
-  python data/make_tier.py --in data/gloss-filtered.db --out data/gloss-core.db \
-      --top-lemmas 5000 --max-senses 2 --drop-examples
+  # named tiers (see data/tiers/ for the data-distribution story):
+  python data/make_tier.py --in data/gloss-filtered.db --out data/gloss-tiny.db --tier tiny
+  python data/make_tier.py --in data/gloss-filtered.db --out data/gloss-small.db --tier small
 
-  # standard tier: 25k lemmas, everything else intact
-  python data/make_tier.py --in data/gloss-filtered.db --out data/gloss-standard.db \
-      --top-lemmas 25000 --max-senses 0
+  # explicit parameters (equivalent to --tier tiny):
+  python data/make_tier.py --in data/gloss-filtered.db --out data/gloss-tiny.db \
+      --top-lemmas 2000 --max-senses 1 --drop-examples
 """
 
 import argparse
@@ -44,9 +44,26 @@ TABLES = [
     "sense",
     "relation",
     "synset_word",
+]
+# Present in the canonical DB; dropped from filtered builds (the flags have
+# already been applied there, so there is nothing left to carry over).
+OPTIONAL_TABLES = [
     "content_flag",
     "content_flag_synset",
 ]
+
+# Named tiers. `full` is the default tier everywhere: the complete database.
+# `top_lemmas=None` keeps every lemma; `max_senses=0` keeps every sense.
+TIERS = {
+    "tiny":   {"top_lemmas": 2000,  "max_senses": 1, "drop_examples": True,
+               "blurb": "2k most frequent words, 1st sense only, no examples (~1.4 MB)"},
+    "small":  {"top_lemmas": 5000,  "max_senses": 2, "drop_examples": False,
+               "blurb": "5k most frequent words, top 2 senses, with examples (~5.5 MB)"},
+    "medium": {"top_lemmas": 25000, "max_senses": 0, "drop_examples": False,
+               "blurb": "25k most frequent words, all senses (~27 MB)"},
+    "full":   {"top_lemmas": None,  "max_senses": 0, "drop_examples": False,
+               "blurb": "the complete database, unchanged (~74 MB)"},
+}
 
 
 def load_rank_wordfreq(spec):
@@ -87,12 +104,18 @@ def main():
     ap = argparse.ArgumentParser(description="Build a frequency-ranked gloss.db tier.")
     ap.add_argument("--in", dest="inp", required=True, help="input gloss.db (full size)")
     ap.add_argument("--out", required=True, help="output gloss.db (tier)")
-    ap.add_argument("--top-lemmas", type=int, default=5000,
+    ap.add_argument("--tier", choices=sorted(TIERS),
+                    help="named preset: " +
+                    "; ".join(f"{n} ({t['blurb']})" for n, t in sorted(TIERS.items())) +
+                    ". Explicit --top-lemmas/--max-senses/--drop-examples override"
+                    " the preset.")
+    ap.add_argument("--top-lemmas", type=int, default=None,
                     help="keep this many most-frequent distinct lemmas; every"
-                    " POS entry of a kept lemma is included (default 5000)")
-    ap.add_argument("--max-senses", type=int, default=2,
+                    " POS entry of a kept lemma is included (default 5000,"
+                    " or the --tier preset value)")
+    ap.add_argument("--max-senses", type=int, default=None,
                     help="max senses kept per lemma (most frequent first); "
-                         "0 = unlimited (default 2)")
+                         "0 = unlimited (default 2, or the --tier preset value)")
     ap.add_argument("--drop-examples", action="store_true",
                     help="store [] instead of usage examples")
     ap.add_argument("--freq", default="wordfreq:50000",
@@ -105,8 +128,26 @@ def main():
                     help="overwrite --out if it exists")
     args = ap.parse_args()
 
-    if args.top_lemmas <= 0:
+    if args.tier:
+        preset = TIERS[args.tier]
+        top_lemmas = args.top_lemmas if args.top_lemmas is not None else preset["top_lemmas"]
+        max_senses = args.max_senses if args.max_senses is not None else preset["max_senses"]
+        drop_examples = args.drop_examples or preset["drop_examples"]
+        tier_name = args.tier_name or args.tier
+    else:
+        top_lemmas = args.top_lemmas if args.top_lemmas is not None else 5000
+        max_senses = args.max_senses if args.max_senses is not None else 2
+        drop_examples = args.drop_examples
+        tier_name = args.tier_name or (
+            f"top{top_lemmas}"
+            + (f"-s{max_senses}" if max_senses else "")
+            + ("-noex" if drop_examples else "")
+        )
+
+    if top_lemmas is not None and top_lemmas <= 0:
         sys.exit("--top-lemmas must be positive")
+    if max_senses < 0:
+        sys.exit("--max-senses must be >= 0")
     if os.path.exists(args.out) and not args.force:
         sys.exit(f"{args.out} exists; pass --force to overwrite")
     if args.freq_csv:
@@ -114,11 +155,7 @@ def main():
     else:
         rank, freq_source = load_rank_wordfreq(args.freq)
 
-    tier_name = args.tier_name or (
-        f"top{args.top_lemmas}"
-        + (f"-s{args.max_senses}" if args.max_senses else "")
-        + ("-noex" if args.drop_examples else "")
-    )
+    _full = top_lemmas is None  # --tier full: keep every lemma
 
     src = sqlite3.connect(f"file:{os.path.abspath(args.inp)}?mode=ro", uri=True)
     src.row_factory = sqlite3.Row
@@ -142,11 +179,14 @@ def main():
     scored = sorted(str_rank.items(),
                     key=lambda kv: (kv[1][0] is None, kv[1][0] or 0, kv[1][1]))
     matched = sum(1 for _, (rk, _) in scored if rk is not None)
-    if matched < args.top_lemmas:
+    if not _full and matched < top_lemmas:
         print(f"warning: only {matched} lemmas matched the frequency list "
-              f"(asked top {args.top_lemmas}); tier will be smaller")
-    kept_strings = {key for key, (rk, _) in scored[:args.top_lemmas]
-                    if rk is not None}
+              f"(asked top {top_lemmas}); tier will be smaller")
+    if _full:
+        kept_strings = set(str_rank)
+    else:
+        kept_strings = {key for key, (rk, _) in scored[:top_lemmas]
+                        if rk is not None}
     kept_lemma_ids = {i for key in kept_strings for i in ids_by_str[key]}
 
     # 2. Senses, streaming in (lemma_id, sense_no) order so the cap keeps the
@@ -161,10 +201,10 @@ def main():
             cur_lid, kept_n = r["lemma_id"], 0
         if r["lemma_id"] not in kept_lemma_ids:
             continue
-        if args.max_senses and kept_n >= args.max_senses:
+        if max_senses and kept_n >= max_senses:
             continue
         kept_n += 1
-        examples = "[]" if args.drop_examples else r["examples"]
+        examples = "[]" if drop_examples else r["examples"]
         sense_rows.append((r["id"], r["lemma_id"], r["pos"], r["sense_no"],
                            r["synset_offset"], r["definition"], examples))
         kept_synsets.add((r["synset_offset"], r["pos"]))
@@ -219,17 +259,19 @@ def main():
         "INSERT INTO relation(id, from_offset, from_pos, ptr, to_offset, to_pos,"
         " from_word, to_word) VALUES(?,?,?,?,?,?,?,?)", rel_rows)
 
-    dst.executemany(
-        "INSERT INTO content_flag(lemma_id, reason, source, source_url,"
-        " source_license, category, severity, source_version)"
-        " VALUES(?,?,?,?,?,?,?,?)",
-        (tuple(r) for r in src.execute("SELECT * FROM content_flag")
-         if r["lemma_id"] in kept_lemma_ids))
-    dst.executemany(
-        "INSERT INTO content_flag_synset(synset_offset, pos, reason, source,"
-        " source_url, source_license, source_version) VALUES(?,?,?,?,?,?,?)",
-        (tuple(r) for r in src.execute("SELECT * FROM content_flag_synset")
-         if (r["synset_offset"], r["pos"]) in kept_synsets))
+    if "content_flag" in have:
+        dst.executemany(
+            "INSERT INTO content_flag(lemma_id, reason, source, source_url,"
+            " source_license, category, severity, source_version)"
+            " VALUES(?,?,?,?,?,?,?,?)",
+            (tuple(r) for r in src.execute("SELECT * FROM content_flag")
+             if r["lemma_id"] in kept_lemma_ids))
+    if "content_flag_synset" in have:
+        dst.executemany(
+            "INSERT INTO content_flag_synset(synset_offset, pos, reason, source,"
+            " source_url, source_license, source_version) VALUES(?,?,?,?,?,?,?)",
+            (tuple(r) for r in src.execute("SELECT * FROM content_flag_synset")
+             if (r["synset_offset"], r["pos"]) in kept_synsets))
 
     for r in src.execute("SELECT key, value FROM meta"):
         dst.execute("INSERT INTO meta(key, value) VALUES(?,?)",
@@ -240,9 +282,9 @@ def main():
     tier_meta = {
         "build_profile": f"{profile}-{tier_name}",
         "tier_name": tier_name,
-        "tier_top_lemmas": str(args.top_lemmas),
-        "tier_max_senses": str(args.max_senses),
-        "tier_drop_examples": str(bool(args.drop_examples)).lower(),
+        "tier_top_lemmas": "all" if _full else str(top_lemmas),
+        "tier_max_senses": str(max_senses),
+        "tier_drop_examples": str(bool(drop_examples)).lower(),
         "tier_frequency_source": freq_source,
         "tier_built_at": datetime.now(timezone.utc).isoformat(),
     }

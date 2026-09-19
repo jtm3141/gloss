@@ -1,0 +1,8 @@
+@PACKAGE_INIT@
+
+# gloss C++ binding — find_package(gloss 0.2 CONFIG) provides gloss::gloss,
+# a header-only RAII wrapper with the gloss C core linked in transitively.
+
+include("${CMAKE_CURRENT_LIST_DIR}/glossTargets.cmake")
+
+check_required_components(gloss)

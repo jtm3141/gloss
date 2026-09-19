@@ -15,6 +15,12 @@
 extern "C" {
 #endif
 
+/* Version: keep in sync with CMake PROJECT_VERSION. */
+#define GLOSS_VERSION_MAJOR 0
+#define GLOSS_VERSION_MINOR 2
+#define GLOSS_VERSION_PATCH 0
+#define GLOSS_VERSION_STRING "0.2.0"
+
 typedef struct gloss_db gloss_db_t;
 
 /* One word sense. */

@@ -2,19 +2,37 @@
 
 import gloss
 gloss.configure("/path/to/gloss.db")   # or set the GLOSS_DB env var,
-                                       # or keep data/gloss.db near your cwd
-gloss.define("dog")
-gloss.lookup("dog")
+                                       # or let the tier system pick one:
+gloss.define("dog")                     # full tier (the default)
+gloss.define("dog", tier="tiny")        # or set GLOSS_TIER=tiny
+db = gloss.Database(tier="small")       # explicit handle
+gloss.download("medium")                # pre-fetch a tier into the cache
 """
 
 import os
 
-from ._db import Database, Entry, Related, Sense
+from . import tiers
+from ._db import Database as _Database, Entry, Related, Sense
 
-__all__ = ["Database", "Entry", "Related", "Sense",
-           "configure", "define", "lookup", "search"]
+__all__ = ["Database", "Entry", "Related", "Sense", "tiers",
+           "configure", "define", "download", "lookup", "search"]
 
 _db = None
+
+
+class Database(_Database):
+    """A handle on a gloss DB file.
+
+    Pass a path, or let the tier system resolve one: ``Database(tier=...)``
+    follows the selection in data/tiers/TIERS.md (explicit path, then
+    tier name, then bundled tiny, then the platform cache, then download).
+    """
+
+    def __init__(self, path=None, tier=None):
+        if path is None:
+            path = tiers.resolve(tier=tier)
+        super().__init__(path)
+        self.path = path
 
 
 def configure(path):
@@ -26,38 +44,36 @@ def configure(path):
     return _db
 
 
-def _default_db():
+def _default_db(tier=None):
     global _db
     if _db is not None:
         return _db
-    env = os.environ.get("GLOSS_DB")
+    env = os.environ.get(tiers.ENV_DB)
     if env:
         return configure(env)
-    # Walk up from the cwd looking for data/gloss.db (the repo layout).
-    d = os.path.abspath(os.getcwd())
-    while True:
-        candidate = os.path.join(d, "data", "gloss.db")
-        if os.path.exists(candidate):
-            return configure(candidate)
-        parent = os.path.dirname(d)
-        if parent == d:
-            break
-        d = parent
-    raise FileNotFoundError(
-        "no gloss.db found: call gloss.configure(path), set GLOSS_DB, "
-        "or run from the gloss repo so data/gloss.db is nearby")
+    # Tier resolution: GLOSS_TIER (or `tier`), default "full"; bundled
+    # tiny, platform cache, then download from the manifest.
+    return configure(tiers.resolve(tier=tier))
 
 
-def define(word, db=None):
+def define(word, db=None, tier=None):
     """The single most common definition of `word`, or None."""
-    return (db or _default_db()).define(word)
+    return (db or _default_db(tier)).define(word)
 
 
-def lookup(word, db=None):
+def lookup(word, db=None, tier=None):
     """Full entry for `word`: every sense. None for unknown words."""
-    return (db or _default_db()).lookup(word)
+    return (db or _default_db(tier)).lookup(word)
 
 
-def search(prefix, limit=10, db=None):
+def search(prefix, limit=10, db=None, tier=None):
     """Up to `limit` lemmas starting with `prefix`, alphabetical."""
-    return (db or _default_db()).search(prefix, limit)
+    return (db or _default_db(tier)).search(prefix, limit)
+
+
+def download(tier=None):
+    """Pre-fetch a tier DB into the platform cache (SHA-256 verified).
+
+    Defaults to the currently selected tier.
+    """
+    return tiers.download(tier)

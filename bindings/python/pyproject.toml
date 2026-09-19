@@ -4,11 +4,36 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "gloss-dict"
-version = "0.1.0"
+version = "0.2.0"
 description = "A dead-simple dictionary for everyone, everywhere — powered by Open English WordNet"
 readme = "README.md"
 requires-python = ">=3.9"
 license = { text = "MIT" }
+keywords = ["dictionary", "wordnet", "english", "thesaurus", "lexicon"]
+classifiers = [
+    "Development Status :: 3 - Alpha",
+    "Intended Audience :: Developers",
+    "License :: OSI Approved :: MIT License",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.9",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Topic :: Text Processing :: Linguistic",
+]
+
+[project.urls]
+Homepage = "https://github.com/jtm3141/gloss"
+Repository = "https://github.com/jtm3141/gloss"
+
+[project.scripts]
+gloss = "gloss.cli:main"
 
 [tool.setuptools.packages.find]
 where = ["src"]
+
+[tool.setuptools.package-data]
+# gloss-tiny.db and manifest.json are release copies of data/tiers/ —
+# re-sync them when the tiered databases are rebuilt (see the release
+# checklist in data/tiers/TIERS.md).
+gloss = ["data/*.db", "data/manifest.json", "py.typed"]

@@ -5,12 +5,29 @@
 // Run: ./test_cpp /path/to/gloss.db
 #include <cassert>
 #include <iostream>
+#include <stdexcept>
+#include <string>
 
 #include "gloss.hpp"
 
 int main(int argc, char **argv)
 {
     const char *db_path = argc > 1 ? argv[1] : "../../data/gloss.db";
+
+    // Version metadata matches the binding release.
+    assert(gloss::version() == "0.2.0");
+    assert(gloss::version_major == 0 && gloss::version_minor == 2 &&
+           gloss::version_patch == 0);
+
+    // Open failure throws gloss::error (part of the documented contract).
+    bool threw = false;
+    try {
+        gloss::Database bad("/nonexistent/gloss.db");
+    } catch (const gloss::error &) {
+        threw = true;
+    }
+    assert(threw);
+
     gloss::Database db(db_path);
 
     auto def = db.define("dog");
@@ -26,6 +43,22 @@ int main(int argc, char **argv)
     assert(entry->senses[0].sense_no == 1);
     assert(entry->senses[0].definition == *def);
     assert(!entry->senses[0].synonyms.empty());
+
+    // Conformance: lookup groups n, v, a, r; sense_no ascending within POS.
+    {
+        const std::string pos_order = "nvar";
+        int last_rank = -1, last_no = 0;
+        for (const auto &s : entry->senses) {
+            assert(!s.pos.empty());
+            int rank = static_cast<int>(pos_order.find(s.pos[0]));
+            assert(rank != static_cast<int>(std::string::npos));
+            assert(rank >= last_rank);
+            if (rank == last_rank)
+                assert(s.sense_no > last_no);
+            last_rank = rank;
+            last_no = s.sense_no;
+        }
+    }
 
     auto hyper = entry->senses[0].related(db, "@");
     assert(!hyper.empty());

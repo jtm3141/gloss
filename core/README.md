@@ -13,6 +13,41 @@ every binding and app is a thin layer over `gloss.h`.
 
 ## Build
 
+Two flavors — the drop-in source build (no install, no CMake), and an
+installed static library with pkg-config metadata.
+
+### Drop-in sources
+
+Just compile the two C files and `#include "gloss.h"`:
+
+```bash
+cc -c core/gloss.c core/sqlite3.c -Icore    # or: core/gloss.c core/sqlite3.c
+```
+
+Link your program with the resulting objects (on Linux add
+`-lm -lpthread -ldl`).
+
+### Installed library (CMake)
+
+```bash
+cmake -S core -B build -DCMAKE_BUILD_TYPE=Release
+cmake --build build
+cmake --install build --prefix /usr/local   # installs libgloss.a, gloss.h, gloss.pc
+```
+
+Also works as `add_subdirectory(core)` from a parent project, which
+exposes the `gloss::gloss` target. Library version is 0.2.0
+(`GLOSS_VERSION_STRING` in `gloss.h`); `sqlite3.c` is compiled in
+privately — only `gloss.h` is installed.
+
+Using the installed library:
+
+```bash
+cc -O2 -o myapp myapp.c $(pkg-config --cflags --libs gloss)
+```
+
+### Shared-library variant (for the conformance test)
+
 Windows (MinGW):
 
 ```powershell

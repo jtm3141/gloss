@@ -1,15 +1,32 @@
 // gloss-dict — TypeScript binding for the gloss dictionary engine.
 //
 //   import { define, lookup, configure } from "gloss-dict";
-//   configure("/path/to/gloss.db");   // or set GLOSS_DB, or keep data/gloss.db nearby
+//   configure("/path/to/gloss.db");   // or set GLOSS_DB
 //   define("dog");                    // most common definition
 //   lookup("dog");                    // every sense + relations
 //
-// Node backend is better-sqlite3 (bundled). A WASM core for browsers is planned.
+// With no explicit path, the database is resolved through the tier system
+// (see ./tiers.ts and data/tiers/TIERS.md): GLOSS_DB wins, then GLOSS_TIER
+// (default "full"), then the bundled tiny database, then the platform
+// cache. Fetch a larger tier ahead of time with `gloss download --tier small`
+// or `await downloadTier("small")`.
+//
+// Node backend is node:sqlite (built into Node 22+ — no native modules).
 
-import Database from "better-sqlite3";
-import * as fs from "fs";
-import * as path from "path";
+import { DatabaseSync } from "node:sqlite";
+import { resolveDbPath } from "./tiers";
+
+// Tier selection API (see ./tiers.ts): resolveDbPath, downloadTier, etc.
+export {
+  cacheDir,
+  dataDir,
+  DEFAULT_TIER,
+  downloadTier,
+  resolveDbPath,
+  selectedTier,
+  TIERS,
+} from "./tiers";
+export type { ResolveOptions, TierName } from "./tiers";
 
 const POS_ORDER = ["n", "v", "a", "r"] as const;
 const REL_CAP = 40;
@@ -35,45 +52,49 @@ export interface Entry {
   senses: Sense[];
 }
 
-let db: Database.Database | null = null;
+export interface DbOptions {
+  /** Tier name (tiny|small|medium|full); GLOSS_TIER or "full" when omitted. */
+  tier?: string;
+}
 
-function findDb(): string {
-  const env = process.env.GLOSS_DB;
-  if (env) return env;
-  let dir = process.cwd();
-  for (;;) {
-    const candidate = path.join(dir, "data", "gloss.db");
-    if (fs.existsSync(candidate)) return candidate;
-    const parent = path.dirname(dir);
-    if (parent === dir) break;
-    dir = parent;
+let db: DatabaseSync | null = null;
+let dbKey: string | null = null;
+
+function openAt(p: string): DatabaseSync {
+  if (!db || dbKey !== p) {
+    if (db) db.close();
+    db = new DatabaseSync(p, { readOnly: true });
+    dbKey = p;
   }
-  throw new Error(
-    "no gloss.db found: call configure(path), set GLOSS_DB, or run where data/gloss.db is nearby"
-  );
+  return db;
 }
 
-/** Point the module at a gloss.db file. */
-export function configure(dbPath?: string): void {
-  if (db) db.close();
-  const p = dbPath ?? findDb();
-  db = new Database(p, { readonly: true });
+/**
+ * Point the module at a gloss database. An explicit path is used exactly as
+ * given; with no path the tier system resolves one (GLOSS_DB, then
+ * GLOSS_TIER, bundled tiny, platform cache).
+ */
+export function configure(dbPath?: string, opts: DbOptions = {}): void {
+  openAt(dbPath ?? resolveDbPath(opts));
 }
 
-function conn(): Database.Database {
-  if (!db) configure();
-  return db!;
+function conn(opts: DbOptions = {}): DatabaseSync {
+  // An already-open database stays open (as before); a per-call tier=
+  // forces re-resolution through the tier system.
+  if (db && !opts.tier) return db;
+  return openAt(resolveDbPath(opts));
 }
 
-function synsetWords(c: Database.Database, offset: number, pos: string): string[] {
+function synsetWords(c: DatabaseSync, offset: number, pos: string): string[] {
   // Surface forms from the data file, in synset word order.
-  return c
-    .prepare(
-      `SELECT word FROM synset_word
-       WHERE synset_offset = ? AND pos = ? ORDER BY word_pos`
-    )
-    .all(offset, pos)
-    .map((r: any) => r.word as string);
+  return (
+    c
+      .prepare(
+        `SELECT word FROM synset_word
+         WHERE synset_offset = ? AND pos = ? ORDER BY word_pos`
+      )
+      .all(offset, pos) as any[]
+  ).map((r) => r.word as string);
 }
 
 // Exact form first, then lowercase (data files keep original case).
@@ -83,7 +104,7 @@ function wordForms(word: string): string[] {
 }
 
 function relatedFor(
-  c: Database.Database,
+  c: DatabaseSync,
   sense: { synsetOffset: number; synsetPos: string },
   ptr: string
 ): Related[] {
@@ -97,17 +118,16 @@ function relatedFor(
   return rows.map((r) => ({
     words: synsetWords(c, r.toOffset, r.toPos),
     definition: (
-      c.prepare(`SELECT definition FROM synset WHERE offset = ? AND pos = ?`).get(
-        r.toOffset,
-        r.toPos
-      ) as any
+      c
+        .prepare(`SELECT definition FROM synset WHERE offset = ? AND pos = ?`)
+        .get(r.toOffset, r.toPos) as any
     ).definition as string,
   }));
 }
 
 /** The single most common definition of `word` (POS tried n, v, a, r), or null. */
-export function define(word: string): string | null {
-  const c = conn();
+export function define(word: string, opts: DbOptions = {}): string | null {
+  const c = conn(opts);
   const stmt = c.prepare(
     `SELECT s.definition FROM sense s JOIN lemma l ON l.id = s.lemma_id
      WHERE l.lemma = ? AND l.pos = ? AND s.sense_no = 1`
@@ -122,8 +142,8 @@ export function define(word: string): string | null {
 }
 
 /** Full entry for `word`: every sense. Null for unknown words. */
-export function lookup(word: string): Entry | null {
-  const c = conn();
+export function lookup(word: string, opts: DbOptions = {}): Entry | null {
+  const c = conn(opts);
   for (const form of wordForms(word)) {
     const senses: Sense[] = [];
     for (const pos of POS_ORDER) {
@@ -156,9 +176,33 @@ export function lookup(word: string): Entry | null {
   return null;
 }
 
+/**
+ * Target synsets of one pointer type (e.g. "@" hypernym, "~" hyponym,
+ * "!" antonym) for the most common sense of `word`. Empty for unknown words.
+ */
+export function related(
+  word: string,
+  ptr: string,
+  opts: DbOptions = {}
+): Related[] {
+  const c = conn(opts);
+  const stmt = c.prepare(
+    `SELECT s.synset_offset AS synsetOffset, s.pos AS synsetPos
+     FROM sense s JOIN lemma l ON l.id = s.lemma_id
+     WHERE l.lemma = ? AND l.pos = ? AND s.sense_no = 1`
+  );
+  for (const form of wordForms(word)) {
+    for (const pos of POS_ORDER) {
+      const r = stmt.get(form, pos) as any;
+      if (r) return relatedFor(c, r, ptr);
+    }
+  }
+  return [];
+}
+
 /** Up to `limit` lemmas starting with `prefix`, alphabetical. */
-export function search(prefix: string, limit = 10): string[] {
-  const c = conn();
+export function search(prefix: string, limit = 10, opts: DbOptions = {}): string[] {
+  const c = conn(opts);
   const pat = prefix.replace(/[\\%_]/g, (m) => "\\" + m) + "%";
   return (
     c

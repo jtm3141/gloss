@@ -41,6 +41,14 @@ Built from [Open English WordNet](https://github.com/globalwordnet/english-wordn
 Phone apps ship a taboo-filtered build (content flags are applied at build time;
 the canonical DB keeps everything, flagged).
 
+## Database tiers
+
+One dictionary, four sizes — `tiny` (1.4 MB), `small` (5.5 MB), `medium`
+(27 MB), `full` (74 MB, the default). Every tier is a real `gloss.db`;
+sense numbers are never renumbered, so deep links work in every tier.
+Select with `GLOSS_TIER`, `--tier`, or `GLOSS_DB`; larger tiers download
+on first use. See [`data/tiers/TIERS.md`](data/tiers/TIERS.md).
+
 ## Rebuilding the database
 
 ```powershell

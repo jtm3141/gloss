@@ -1,0 +1,14 @@
+# Build artifacts (populated by `npm run prepare-data`; never commit the big ones)
+public/gloss.db.gz
+public/*.wasm
+
+# Next.js
+.next/
+out/
+
+# TS build info
+tsconfig.tsbuildinfo
+ 
+# Local env (never commit) 
+.env* 
+.api.stash/ 

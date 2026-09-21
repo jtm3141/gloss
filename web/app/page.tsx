@@ -329,8 +329,12 @@ export default function Home() {
   return (
     <div className="page">
       <div className={`hero${searched ? " compact" : ""}`}>
-        <h1 className="wordmark" onClick={goHome}>
-          gloss
+        <h1 className="wordmark" onClick={goHome} title="gloss — home">
+          <span className="wordmark-name">gloss</span>
+          <span className="wordmark-sep" aria-hidden="true">
+            |
+          </span>
+          <span className="wordmark-tag">an open dictionary</span>
         </h1>
         <div className="searchbox">
           <div className="searchrow">
@@ -352,9 +356,7 @@ export default function Home() {
               onKeyDown={onKeyDown}
               onBlur={() => setTimeout(() => setSuggestions([]), 120)}
             />
-            <button className="define" onClick={() => runSearch(query)}>
-              Define
-            </button>
+
           </div>
           {suggestions.length > 0 && (
             <ul className="suggestions" id="search-suggestions" role="listbox">

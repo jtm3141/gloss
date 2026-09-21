@@ -6,6 +6,7 @@
    ============================================================ */
 
 :root {
+  color-scheme: light dark;
   /* Color — semantic tokens. The accent is reserved for
      interactive elements only: links, chips, primary button,
      focus rings. Everything else is neutral. */
@@ -146,17 +147,6 @@ input[type="text"]::placeholder {
 input[type="text"]:focus {
   border-color: var(--accent);
   box-shadow: 0 0 0 3px var(--accent-soft);
-}
-
-button
-
-button.define:hover {
-  background: var(--accent-dark);
-  border-color: var(--accent-dark);
-}
-
-button.define:active {
-  transform: translateY(1px);
 }
 
 /* ---------- autocomplete suggestions ---------- */
@@ -571,12 +561,39 @@ button.define:active {
     scroll-behavior: auto !important;
   }
 
-  button.define:active {
-    transform: none;
-  }
-
+  
   .sense-flash {
     animation: none;
     background-color: var(--accent-soft);
+  }
+}
+
+/* ---------- dark mode ---------- */
+/* Follows the OS/browser color-scheme preference. The palette is
+   token-driven, so the dark theme only redefines the tokens, plus
+   two hardcoded fills (chip hover, mobile sticky bar). */
+@media (prefers-color-scheme: dark) {
+  :root {
+    --text: #e8e8e8;
+    --text-secondary: #b3b3b3;
+    --text-tertiary: #8a8a8a;
+    --accent: #7fb8e8;
+    --accent-dark: #a8cdee;
+    --accent-soft: #1e2f42;
+    --bg: #121212;
+    --bg-wash: #1e1e1e;
+    --border: #3a3a3a;
+    --border-soft: #2a2a2a;
+    --error: #ff8a9a;
+  }
+
+  .chip:hover {
+    background: #2a3f55;
+  }
+}
+
+@media (max-width: 640px) and (prefers-color-scheme: dark) {
+  .hero.compact {
+    background: rgba(18, 18, 18, 0.98);
   }
 }

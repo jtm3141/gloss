@@ -115,6 +115,7 @@ export async function defineWord(raw: string): Promise<Definition | null> {
       s = {
         n,
         pos,
+        synset: `${pos}:${r.so as number}`,
         so: r.so as number,
         srcWp: (r.src_wp as number) ?? 0,
         definition: (r.definition as string) ?? "",

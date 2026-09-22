@@ -13,6 +13,7 @@ export interface RelatedGroup {
 export interface Sense {
   n: number; // WordNet sense number (1 = most common)
   pos: string; // n | v | a | r
+  synset: string; // synset identity "<pos>:<synset_offset>", stable across words
   definition: string;
   examples: string[];
   synonyms: string[];

@@ -88,6 +88,17 @@ function parseSenseParam(value: string | null): { pos: string; n: number } | nul
   return Number.isSafeInteger(n) && n > 0 ? { pos: m[1], n } : null;
 }
 
+// A &synset=<pos><offset> value like "n12345" identifies a synset across
+// words; parsed back into the "<pos>:<offset>" identity carried on senses.
+function parseSynsetParam(value: string | null): string | null {
+  const p = parseSenseParam(value);
+  return p ? `${p.pos}:${p.n}` : null;
+}
+
+function synsetUrl(word: string, synset: string): string {
+  return `${wordUrl(word)}&synset=${synset.replace(":", "")}`;
+}
+
 // Brief checkmark feedback after a successful copy.
 function useCopiedFlag(): [boolean, () => void] {
   const [copied, setCopied] = useState(false);
@@ -155,8 +166,8 @@ function RelatedRow({
       <span className="rellabel">{label}:</span>{" "}
       {shown.map((w, i) => (
         <span key={w}>
-          {i > 0 && <span className="chipsep"> · </span>}
-          <button className="chip" onClick={() => onPick(w)} title={`Define ${w}`}>
+          {i > 0 && ", "}
+          <button className="relword" onClick={() => onPick(w)} title={`Define ${w}`}>
             {w}
           </button>
         </span>
@@ -184,10 +195,22 @@ export default function Home() {
   const [notFound, setNotFound] = useState<string | null>(null);
   const [searched, setSearched] = useState(false);
   const [meta, setMeta] = useState<Record<string, string>>({});
-  const [deepLink, setDeepLink] = useState<{ word: string; sense: { pos: string; n: number } | null } | null>(null);
+  const [deepLink, setDeepLink] = useState<{
+    word: string;
+    sense: { pos: string; n: number } | null;
+    synset: string | null;
+  } | null>(null);
   const inputRef = useRef<HTMLInputElement>(null);
   const suggestTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  // Monotonic generation for suggestion requests: each keystroke schedules a
+  // new generation and each search invalidates all of them, so a stale
+  // suggest() response can never repopulate the dropdown afterwards.
+  const suggestGen = useRef(0);
   const pendingSense = useRef<{ pos: string; n: number } | null>(null);
+  // A synset identity ("<pos>:<offset>") waiting to be resolved against the
+  // loaded definition. Set when a synonym link is followed, so the shared
+  // sense is shown instead of the target word's most-common sense.
+  const pendingSynset = useRef<string | null>(null);
 
   useEffect(() => {
     let cancelled = false;
@@ -221,6 +244,14 @@ export default function Home() {
   const runSearch = useCallback(async (word: string) => {
     const w = word.trim();
     if (!w || status.state !== "ready") return;
+    // A search supersedes suggestions: cancel the debounce timer and
+    // invalidate its generation so a late suggest() response can't
+    // repopulate the dropdown over the definition.
+    suggestGen.current += 1;
+    if (suggestTimer.current) {
+      clearTimeout(suggestTimer.current);
+      suggestTimer.current = null;
+    }
     setSuggestions([]);
     setActiveSug(-1);
     setSearched(true);
@@ -240,7 +271,11 @@ export default function Home() {
     const params = new URLSearchParams(window.location.search);
     const w = params.get("define")?.trim();
     if (!w) return;
-    setDeepLink({ word: w, sense: parseSenseParam(params.get("sense")) });
+    setDeepLink({
+      word: w,
+      sense: parseSenseParam(params.get("sense")),
+      synset: parseSynsetParam(params.get("synset")),
+    });
     setQuery(w);
   }, []);
 
@@ -248,18 +283,30 @@ export default function Home() {
   useEffect(() => {
     if (status.state === "ready" && deepLink) {
       pendingSense.current = deepLink.sense;
+      pendingSynset.current = deepLink.synset;
       const w = deepLink.word;
       setDeepLink(null);
       void runSearch(w);
     }
   }, [status.state, deepLink, runSearch]);
 
-  // After results render, jump to the linked sense and flash it.
+  // After results render, jump to the linked sense and flash it. A pending
+  // synset (from a synonym click) is resolved to the target word's own sense
+  // number first, so the shared meaning is shown.
   useEffect(() => {
-    if (!result || pendingSense.current == null) return;
-    const { pos, n } = pendingSense.current;
-    pendingSense.current = null;
-    const el = document.getElementById(`sense-${pos}${n}`);
+    if (!result) return;
+    let target: { pos: string; n: number } | null = null;
+    if (pendingSynset.current != null) {
+      const id = pendingSynset.current;
+      pendingSynset.current = null;
+      const s = result.senses.find((x) => x.synset === id);
+      if (s) target = { pos: s.pos, n: s.n };
+    } else if (pendingSense.current != null) {
+      target = pendingSense.current;
+      pendingSense.current = null;
+    }
+    if (!target) return;
+    const el = document.getElementById(`sense-${target.pos}${target.n}`);
     if (!el) return;
     const reduceMotion = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
     el.scrollIntoView({ behavior: reduceMotion ? "auto" : "smooth", block: "center" });
@@ -279,9 +326,15 @@ export default function Home() {
       setSuggestions([]);
       return;
     }
+    suggestGen.current += 1;
+    const gen = suggestGen.current;
     suggestTimer.current = setTimeout(async () => {
+      suggestTimer.current = null;
       try {
-        setSuggestions(await suggest(v));
+        const res = await suggest(v);
+        // Drop responses superseded by a newer keystroke or a search.
+        if (gen !== suggestGen.current) return;
+        setSuggestions(res);
         setActiveSug(-1);
       } catch {
         /* db not ready; ignore */
@@ -309,6 +362,19 @@ export default function Home() {
     inputRef.current?.focus();
     window.scrollTo({ top: 0 });
     runSearch(w);
+  };
+
+  // Synonym click: open the word, then land on the shared synset rather than
+  // the word's own most-common sense (usually a different meaning).
+  const pickSynonym = (w: string, synset: string) => {
+    setQuery(w);
+    inputRef.current?.focus();
+    window.scrollTo({ top: 0 });
+    pendingSynset.current = synset;
+    runSearch(w);
+    // runSearch resets the address bar to ?define=<word>; re-apply the synset
+    // afterwards so the link stays shareable.
+    window.history.replaceState(null, "", synsetUrl(w, synset));
   };
 
   const goHome = () => {
@@ -423,7 +489,19 @@ export default function Home() {
                     ))}
                     {s.synonyms.length > 0 && (
                       <div className="synonyms">
-                        <strong>Synonyms:</strong> {s.synonyms.join(", ")}
+                        <strong>Synonyms:</strong>{" "}
+                        {s.synonyms.map((w, i) => (
+                          <span key={w}>
+                            {i > 0 && ", "}
+                            <button
+                              className="relword"
+                              onClick={() => pickSynonym(w, s.synset)}
+                              title={`Define ${w}`}
+                            >
+                              {w}
+                            </button>
+                          </span>
+                        ))}
                       </div>
                     )}
                     {s.related.map((g) => (

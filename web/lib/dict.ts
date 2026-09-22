@@ -63,6 +63,7 @@ export async function defineWord(raw: string): Promise<Definition | null> {
       s = {
         n,
         pos,
+        synset: `${pos}:${r.so as number}`,
         so: r.so as number,
         srcWp: (r.src_wp as number) ?? 0,
         definition: (r.definition as string) ?? "",
@@ -101,7 +102,8 @@ export async function defineWord(raw: string): Promise<Definition | null> {
 
   const clean: Sense[] = senses
     .sort((a, b) => POS_RANK[a.pos] - POS_RANK[b.pos] || a.n - b.n)
-    // Strip the internal synset bookkeeping before serializing.
+    // Drop the internal-only fields before serializing. `synset` stays:
+    // it is the public cross-word identity used for synonym deep links.
     .map(({ so: _so, srcWp: _srcWp, ...rest }) => rest);
   return { word, senses: clean };
 }

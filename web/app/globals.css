@@ -8,14 +8,14 @@
 :root {
   color-scheme: light dark;
   /* Color — semantic tokens. The accent is reserved for
-     interactive elements only: links, chips, primary button,
+     interactive elements only: links, related-word links, primary button,
      focus rings. Everything else is neutral. */
   --text: #1a1a1a;            /* near-black, ~17:1 on white */
   --text-secondary: #595959;  /* ~7.5:1 — body-level metadata */
   --text-tertiary: #767676;   /* ~4.5:1 — small labels only, never body text */
   --accent: #1d70b8;          /* GOV.UK blue — interactive elements only */
   --accent-dark: #144e81;     /* accent hover / active */
-  --accent-soft: #e9f1f9;     /* chip fill */
+  --accent-soft: #e9f1f9;     /* soft accent wash */
   --bg: #ffffff;
   --bg-wash: #f5f5f5;
   --border: #d9d9d9;
@@ -345,33 +345,32 @@ input[type="text"]:focus {
   margin-right: 4px;
 }
 
-/* Chips carry a persistent fill (not color-alone affordance) so they
-   read as tappable without hovering. Accent text = interactive. */
-.chip {
-  display: inline-block;
-  font-family: inherit;
+/* Related words are quiet text links at the same size as the synonym
+   line. The accent color alone marks them interactive; an underline
+   appears only on hover/focus, keeping the words and definitions the
+   visual focus. */
+.relword {
+  font: inherit;
   font-size: 14px;
-  line-height: 1.4;
-  min-height: 32px;
-  padding: 6px 14px;
-  margin: 2px 0;
+  line-height: 1.55;
   color: var(--accent);
-  background: var(--accent-soft);
+  background: none;
   border: none;
-  border-radius: 999px;
+  padding: 0;
   cursor: pointer;
-  vertical-align: middle;
 }
 
-.chip:hover {
-  background: #d9e8f7;
+.relword:hover {
   text-decoration: underline;
   text-underline-offset: 2px;
 }
 
-.chipsep {
-  color: var(--border);
-  margin: 0 2px;
+.relword:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+  border-radius: 2px;
+  text-decoration: underline;
+  text-underline-offset: 2px;
 }
 
 .chipmore {
@@ -544,11 +543,6 @@ input[type="text"]:focus {
 /* Touch-sized targets on coarse-pointer devices (WCAG floor is
    24px; iOS/Android guidance is 44–48). */
 @media (pointer: coarse) {
-  .chip {
-    min-height: 44px;
-    padding: 10px 18px;
-  }
-
   .copybtn {
     min-height: 44px;
     min-width: 44px;
@@ -571,7 +565,7 @@ input[type="text"]:focus {
 /* ---------- dark mode ---------- */
 /* Follows the OS/browser color-scheme preference. The palette is
    token-driven, so the dark theme only redefines the tokens, plus
-   two hardcoded fills (chip hover, mobile sticky bar). */
+   one hardcoded fill (mobile sticky bar). */
 @media (prefers-color-scheme: dark) {
   :root {
     --text: #e8e8e8;
@@ -587,9 +581,6 @@ input[type="text"]:focus {
     --error: #ff8a9a;
   }
 
-  .chip:hover {
-    background: #2a3f55;
-  }
 }
 
 @media (max-width: 640px) and (prefers-color-scheme: dark) {

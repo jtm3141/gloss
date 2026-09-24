@@ -189,25 +189,23 @@ export default function GlassesPage() {
               lastAction.current = index;
               return { area: "actions", index };
             }
+            // Suggestions sit above the bar, best match (index 0) nearest it.
+            if (dir === "up") return n > 0 ? { area: "suggest", index: 0 } : f;
             if (dir === "down")
-              return n > 0
-                ? { area: "suggest", index: 0 }
-                : { area: "keys", row: 0, col: 0 };
+              return {
+                area: "keys",
+                row: 0,
+                col: Math.min(lastKeyCol.current, KEY_ROWS[0].length - 1),
+              };
             return f;
           }
           case "suggest": {
             if (dir === "up")
+              return f.index < n - 1 ? { area: "suggest", index: f.index + 1 } : f;
+            if (dir === "down")
               return f.index > 0
                 ? { area: "suggest", index: f.index - 1 }
                 : { area: "actions", index: lastAction.current };
-            if (dir === "down")
-              return f.index < n - 1
-                ? { area: "suggest", index: f.index + 1 }
-                : {
-                    area: "keys",
-                    row: 0,
-                    col: Math.min(lastKeyCol.current, KEY_ROWS[0].length - 1),
-                  };
             return f;
           }
           case "keys": {
@@ -216,10 +214,9 @@ export default function GlassesPage() {
             else if (dir === "right")
               col = Math.min(KEY_ROWS[row].length - 1, col + 1);
             else if (dir === "up") {
+              // The action bar sits directly above the keyboard now.
               if (row === 0)
-                return n > 0
-                  ? { area: "suggest", index: n - 1 }
-                  : { area: "actions", index: lastAction.current };
+                return { area: "actions", index: lastAction.current };
               row -= 1;
               col = Math.min(col, KEY_ROWS[row].length - 1);
             } else {
@@ -354,7 +351,31 @@ export default function GlassesPage() {
         aria-label="gloss dictionary"
       >
         {view.name === "search" && (
-          <>
+          <div className={styles.searchview}>
+            <div className={styles.suggest}>
+              {suggestions.length === 0 ? (
+                <div className={styles.hint}>
+                  {query ? "No matches — keep typing" : "Type on the keys below, then pick a word"}
+                </div>
+              ) : (
+                [...suggestions.keys()].reverse().map((i) => {
+                  const s = suggestions[i];
+                  return (
+                    <button
+                      key={s}
+                      type="button"
+                      data-fkey={`s${i}`}
+                      data-on={focusKey === `s${i}`}
+                      tabIndex={-1}
+                      className={styles.sugrow}
+                      onClick={() => doDefine(s)}
+                    >
+                      {s}
+                    </button>
+                  );
+                })
+              )}
+            </div>
             <div className={styles.querybar}>
               <div
                 className={styles.query}
@@ -390,27 +411,6 @@ export default function GlassesPage() {
                 Clr
               </button>
             </div>
-            <div className={styles.suggest}>
-              {suggestions.length === 0 ? (
-                <div className={styles.hint}>
-                  {query ? "No matches — keep typing" : "Type below, then pick a word"}
-                </div>
-              ) : (
-                suggestions.map((s, i) => (
-                  <button
-                    key={s}
-                    type="button"
-                    data-fkey={`s${i}`}
-                    data-on={focusKey === `s${i}`}
-                    tabIndex={-1}
-                    className={styles.sugrow}
-                    onClick={() => doDefine(s)}
-                  >
-                    {s}
-                  </button>
-                ))
-              )}
-            </div>
             <div className={styles.kb}>
               {KEY_ROWS.map((row, r) => (
                 <div key={r} className={styles.krow}>
@@ -435,7 +435,7 @@ export default function GlassesPage() {
                 </div>
               ))}
             </div>
-          </>
+          </div>
         )}
         {view.name === "loading" && (
           <div className={styles.center}>Looking up &ldquo;{view.word}&rdquo;&hellip;</div>

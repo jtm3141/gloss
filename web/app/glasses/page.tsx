@@ -22,7 +22,7 @@ const KEY_ROWS: string[][] = [
 ];
 
 const MAX_SUGGESTIONS = 5;
-const MAX_CHIPS = 24;
+const MAX_PER_GROUP = 12; // matches the main site's related-word cap
 
 // ---------- focus model (search view) ----------
 
@@ -36,7 +36,8 @@ type Dir = "up" | "down" | "left" | "right";
 type View =
   | { name: "search" }
   | { name: "loading"; word: string }
-  | { name: "define"; def: Definition; focus: number } // 0 = Back, 1.. = chips
+  | { name: "define"; def: Definition; focus: { row: number; col: number } }
+  // row 0 = Back; rows 1.. = related-word groups, col = chip within the row
   | { name: "missing"; word: string };
 
 function searchFkey(f: SearchFocus): string {
@@ -58,6 +59,7 @@ export default function GlassesPage() {
   const defScrollRef = useRef<HTMLDivElement>(null);
   const lastAction = useRef(0);
   const lastKeyCol = useRef(0);
+  const prefCol = useRef(0); // preferred chip column for up/down in define view
 
   // Autocomplete suggestions, debounced.
   useEffect(() => {
@@ -89,7 +91,9 @@ export default function GlassesPage() {
     try {
       const d = await defineWord(w);
       setView(
-        d ? { name: "define", def: d, focus: 0 } : { name: "missing", word: w }
+        d
+          ? { name: "define", def: d, focus: { row: 0, col: 0 } }
+          : { name: "missing", word: w }
       );
     } catch {
       setView({ name: "missing", word: w });
@@ -101,36 +105,55 @@ export default function GlassesPage() {
     setSFocus({ area: "keys", row: 0, col: 0 });
   }, []);
 
-  // Related-word chips for the define view: synonyms + related words,
-  // deduped, capped. Linear focus order matches visual order.
-  const chips = useMemo(() => {
-    if (view.name !== "define") return [] as { word: string; label: string }[];
-    const seen = new Set<string>();
-    const out: { word: string; label: string }[] = [];
-    const self = view.def.word.toLowerCase();
-    const push = (word: string, label: string) => {
-      const k = word.toLowerCase();
-      if (k === self || seen.has(k) || out.length >= MAX_CHIPS) return;
-      seen.add(k);
-      out.push({ word, label });
+  // Related-word groups for the define view, mirroring the main site:
+  // Synonyms first, then Broader/Narrower/Opposites/..., merged across
+  // senses and deduped within each group. First-seen label order matches
+  // REL_GROUPS order because groupRelated emits groups in that order.
+  const groups = useMemo(() => {
+    if (view.name !== "define")
+      return [] as { label: string; words: string[] }[];
+    const buckets = new Map<string, string[]>();
+    const order: string[] = [];
+    const add = (label: string, words: string[]) => {
+      if (!buckets.has(label)) {
+        buckets.set(label, []);
+        order.push(label);
+      }
+      buckets.get(label)!.push(...words);
     };
     for (const s of view.def.senses) {
-      for (const w of s.synonyms) push(w, "synonyms");
-      for (const g of s.related)
-        for (const w of g.words) push(w, g.label);
+      add("Synonyms", s.synonyms);
+      for (const g of s.related) add(g.label, g.words);
+    }
+    const self = view.def.word.toLowerCase();
+    const out: { label: string; words: string[] }[] = [];
+    for (const label of order) {
+      const seen = new Set<string>();
+      const uniq: string[] = [];
+      for (const w of buckets.get(label)!) {
+        const k = w.toLowerCase();
+        if (k === self || seen.has(k)) continue;
+        seen.add(k);
+        uniq.push(w);
+        if (uniq.length >= MAX_PER_GROUP) break;
+      }
+      if (uniq.length > 0) out.push({ label, words: uniq });
     }
     return out;
   }, [view]);
 
   const focusKey = useMemo(() => {
     if (view.name === "search") return searchFkey(sFocus);
-    if (view.name === "define") return `d${view.focus}`;
+    if (view.name === "define") return `d${view.focus.row}-${view.focus.col}`;
     return "back";
   }, [view, sFocus]);
 
   // Reset the definition scroll position whenever a new word loads.
   useEffect(() => {
-    if (view.name === "define") defScrollRef.current?.scrollTo({ top: 0 });
+    if (view.name === "define") {
+      defScrollRef.current?.scrollTo({ top: 0 });
+      prefCol.current = 0;
+    }
   }, [view]);
 
   // The stage owns focus; move real DOM focus along with the focus model
@@ -143,7 +166,7 @@ export default function GlassesPage() {
       `[data-fkey="${focusKey}"]`
     );
     el?.focus({ preventScroll: true });
-    el?.scrollIntoView({ block: "nearest" });
+    el?.scrollIntoView({ block: "nearest", inline: "nearest" });
   }, [focusKey, view]);
 
   const moveSearch = useCallback(
@@ -208,6 +231,34 @@ export default function GlassesPage() {
     [suggestions.length]
   );
 
+  // 2-D focus for the define view: up/down moves between the Back button
+  // and the related-word group rows, left/right moves within a row.
+  // Vertical moves keep a preferred column, clamped to the row length.
+  const moveDefine = useCallback(
+    (dir: Dir) => {
+      setView((v) => {
+        if (v.name !== "define") return v;
+        const rowLen = (r: number) => (r === 0 ? 1 : groups[r - 1].words.length);
+        let { row, col } = v.focus;
+        if (dir === "left" || dir === "right") {
+          col =
+            dir === "left"
+              ? Math.max(0, col - 1)
+              : Math.min(rowLen(row) - 1, col + 1);
+          prefCol.current = col;
+        } else {
+          row =
+            dir === "up"
+              ? Math.max(0, row - 1)
+              : Math.min(groups.length, row + 1);
+          col = Math.min(prefCol.current, rowLen(row) - 1);
+        }
+        return { ...v, focus: { row, col } };
+      });
+    },
+    [groups]
+  );
+
   const pressKey = useCallback((key: string) => {
     if (key === "⌫") setQuery((q) => q.slice(0, -1));
     else if (key === "space") setQuery((q) => (q.endsWith(" ") ? q : `${q} `));
@@ -267,11 +318,15 @@ export default function GlassesPage() {
         backToSearch();
         return;
       }
-      const d = k === "ArrowUp" || k === "ArrowLeft" ? -1 : 1;
-      setView((v) =>
-        v.name !== "define"
-          ? v
-          : { ...v, focus: Math.min(chips.length, Math.max(0, v.focus + d)) }
+      // Enter is handled globally: it clicks the focused button.
+      moveDefine(
+        k === "ArrowUp"
+          ? "up"
+          : k === "ArrowDown"
+            ? "down"
+            : k === "ArrowLeft"
+              ? "left"
+              : "right"
       );
       return;
     }
@@ -400,8 +455,8 @@ export default function GlassesPage() {
             <div className={styles.defhead}>
               <button
                 type="button"
-                data-fkey="d0"
-                data-on={focusKey === "d0"}
+                data-fkey="d0-0"
+                data-on={focusKey === "d0-0"}
                 tabIndex={-1}
                 className={styles.backbtn}
                 onClick={backToSearch}
@@ -422,26 +477,29 @@ export default function GlassesPage() {
                   ) : null}
                 </div>
               ))}
-              {chips.length > 0 && (
-                <>
-                  <div className={styles.grouplabel}>Related words</div>
-                  <div className={styles.chips}>
-                    {chips.map((c, i) => (
-                      <button
-                        key={`${c.word}-${i}`}
-                        type="button"
-                        data-fkey={`d${i + 1}`}
-                        data-on={focusKey === `d${i + 1}`}
-                        tabIndex={-1}
-                        className={styles.chip}
-                        onClick={() => doDefine(c.word)}
-                      >
-                        {c.word}
-                      </button>
-                    ))}
+              {groups.map((g, gi) => (
+                <div key={g.label} className={styles.group}>
+                  <div className={styles.grouplabel}>{g.label}</div>
+                  <div className={styles.chiprow}>
+                    {g.words.map((w, wi) => {
+                      const fk = `d${gi + 1}-${wi}`;
+                      return (
+                        <button
+                          key={`${w}-${wi}`}
+                          type="button"
+                          data-fkey={fk}
+                          data-on={focusKey === fk}
+                          tabIndex={-1}
+                          className={styles.chip}
+                          onClick={() => doDefine(w)}
+                        >
+                          {w}
+                        </button>
+                      );
+                    })}
                   </div>
-                </>
-              )}
+                </div>
+              ))}
               <div className={styles.attr}>Open English WordNet · CC-BY 4.0</div>
             </div>
           </>

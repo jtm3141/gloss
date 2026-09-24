@@ -60,6 +60,10 @@ export default function GlassesPage() {
     row: 0,
     col: 0,
   });
+  // Render-time mirror of sFocus for the spatial pill navigation below,
+  // which needs DOM measurements that don't belong in a state updater.
+  const sFocusRef = useRef(sFocus);
+  sFocusRef.current = sFocus;
   const stageRef = useRef<HTMLDivElement>(null);
   const defScrollRef = useRef<HTMLDivElement>(null);
   const lastAction = useRef(0);
@@ -175,8 +179,74 @@ export default function GlassesPage() {
     el?.scrollIntoView({ block: "nearest", inline: "nearest" });
   }, [focusKey, view]);
 
+  // Nearest-pill navigation for the 2-D suggestion cloud. Returns the index of
+  // the closest pill in `dir`, "actions" when moving down off the cloud's
+  // bottom edge, or null when there is no pill in that direction (stay put).
+  const spatialSuggestMove = useCallback(
+    (
+      dir: Dir,
+      fromIndex: number
+    ): number | "actions" | null => {
+    const stage = stageRef.current;
+    const cur = stage?.querySelector<HTMLElement>(
+      `[data-fkey="s${fromIndex}"]`
+    );
+    if (!stage || !cur) return null;
+    const cr = cur.getBoundingClientRect();
+    const cx = cr.left + cr.width / 2;
+    const cy = cr.top + cr.height / 2;
+    let best: number | null = null;
+    let bestScore = Infinity;
+    stage.querySelectorAll<HTMLElement>("[data-sugg]").forEach((el) => {
+      const i = Number(el.dataset.sugg);
+      if (i === fromIndex) return;
+      const r = el.getBoundingClientRect();
+      const dx = r.left + r.width / 2 - cx;
+      const dy = r.top + r.height / 2 - cy;
+      let primary: number;
+      let secondary: number;
+      if (dir === "up") {
+        if (dy > -4) return;
+        primary = -dy;
+        secondary = Math.abs(dx);
+      } else if (dir === "down") {
+        if (dy < 4) return;
+        primary = dy;
+        secondary = Math.abs(dx);
+      } else if (dir === "left") {
+        if (dx > -4) return;
+        primary = -dx;
+        secondary = Math.abs(dy);
+      } else {
+        if (dx < -4) return;
+        primary = dx;
+        secondary = Math.abs(dy);
+      }
+      const score = primary + secondary * 2.5;
+      if (score < bestScore) {
+        bestScore = score;
+        best = i;
+      }
+    });
+    if (best !== null) return best;
+    return dir === "down" ? "actions" : null;
+  },
+    []
+  );
+
   const moveSearch = useCallback(
     (dir: Dir) => {
+      // 2-D spatial navigation inside the suggestion pill cloud: jump to the
+      // nearest pill in the pressed direction. Moving down off the bottom
+      // row lands on the action bar, which sits directly below the cloud.
+      const f = sFocusRef.current;
+      if (f.area === "suggest") {
+        const next = spatialSuggestMove(dir, f.index);
+        if (next === "actions")
+          setSFocus({ area: "actions", index: lastAction.current });
+        else if (next !== null) setSFocus({ area: "suggest", index: next });
+        return;
+      }
       setSFocus((f) => {
         const n = suggestions.length;
         switch (f.area) {
@@ -197,15 +267,6 @@ export default function GlassesPage() {
                 row: 0,
                 col: Math.min(lastKeyCol.current, KEY_ROWS[0].length - 1),
               };
-            return f;
-          }
-          case "suggest": {
-            if (dir === "up")
-              return f.index < n - 1 ? { area: "suggest", index: f.index + 1 } : f;
-            if (dir === "down")
-              return f.index > 0
-                ? { area: "suggest", index: f.index - 1 }
-                : { area: "actions", index: lastAction.current };
             return f;
           }
           case "keys": {
@@ -231,7 +292,7 @@ export default function GlassesPage() {
         return f;
       });
     },
-    [suggestions.length]
+    [suggestions.length, spatialSuggestMove]
   );
 
   // 2-D focus for the define view: up/down moves between the Back button
@@ -358,13 +419,16 @@ export default function GlassesPage() {
                   {query ? "No matches — keep typing" : "Type on the keys below, then pick a word"}
                 </div>
               ) : (
-                [...suggestions.keys()].reverse().map((i) => {
-                  const s = suggestions[i];
+                // Most likely first in the DOM: with wrap-reverse the first
+                // line sits at the bottom, so the bottom row reads left to
+                // right from most to least likely, rows above continue.
+                suggestions.map((s, i) => {
                   return (
                     <button
                       key={s}
                       type="button"
                       data-fkey={`s${i}`}
+                      data-sugg={i}
                       data-on={focusKey === `s${i}`}
                       tabIndex={-1}
                       className={styles.sugrow}

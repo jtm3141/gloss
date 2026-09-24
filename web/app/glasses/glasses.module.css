@@ -27,8 +27,12 @@
   -webkit-user-select: none;
 }
 
-.stage button {
-  font: inherit;
+/* Base button reset. :where() keeps this at zero specificity so the
+   component classes below (which set their own padding/border) always
+   win — a plain `.stage button` selector would silently override them. */
+:where(.stage) button {
+  /* Inherit the family only: every button sets its own size/weight. */
+  font-family: inherit;
   color: inherit;
   border: none;
   padding: 0;
@@ -119,12 +123,17 @@
   min-height: 0;
   overflow-y: auto;
   scrollbar-width: none;
-  padding: 4px 16px;
+  padding: 8px 16px;
   display: flex;
-  flex-direction: column;
-  /* Best match sits at the bottom, nearest the search bar. */
-  justify-content: safe flex-end;
-  gap: 4px;
+  flex-direction: row;
+  /*
+   * Pill cloud, most likely first in the DOM. wrap-reverse flips the cross
+   * axis so the first line sits at the bottom: bottom row reads left to
+   * right from most to least likely, rows above continue less likely.
+   */
+  flex-wrap: wrap-reverse;
+  align-content: flex-start;
+  gap: 12px;
 }
 
 .suggest::-webkit-scrollbar {
@@ -133,17 +142,18 @@
 
 .sugrow {
   flex: none;
-  font-size: 36px;
-  text-align: left;
-  padding: 2px 12px;
-  background: #14161a;
-  border-radius: 10px;
-  overflow: hidden;
+  font-size: 32px;
+  line-height: 1.2;
+  padding: 10px 22px;
+  background: #1c1e21;
+  border: 1px solid #2e3237;
+  border-radius: 999px;
   white-space: nowrap;
-  text-overflow: ellipsis;
 }
 
 .hint {
+  width: 100%;
+  text-align: center;
   color: #8a8f98;
   font-size: 26px;
   padding: 12px 4px;
@@ -167,7 +177,7 @@
   flex: 1 1 0;
   max-width: 84px;
   height: 56px;
-  font-size: 42px;
+  font-size: 38px;
   font-weight: 600;
   background: #1c1e21;
   border-radius: 10px;

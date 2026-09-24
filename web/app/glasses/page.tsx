@@ -33,6 +33,11 @@ type SearchFocus =
 
 type Dir = "up" | "down" | "left" | "right";
 
+// One focusable chip row: a nym group belonging to a single sense.
+// `flat` is the row's index across all senses (drives the D-pad model).
+type NymRow = { label: string; words: string[]; flat: number };
+type SenseBlock = { sense: Definition["senses"][number]; rows: NymRow[] };
+
 type View =
   | { name: "search" }
   | { name: "loading"; word: string }
@@ -105,42 +110,43 @@ export default function GlassesPage() {
     setSFocus({ area: "keys", row: 0, col: 0 });
   }, []);
 
-  // Related-word groups for the define view, mirroring the main site:
-  // Synonyms first, then Broader/Narrower/Opposites/..., merged across
-  // senses and deduped within each group. First-seen label order matches
-  // REL_GROUPS order because groupRelated emits groups in that order.
-  const groups = useMemo(() => {
-    if (view.name !== "define")
-      return [] as { label: string; words: string[] }[];
-    const buckets = new Map<string, string[]>();
-    const order: string[] = [];
-    const add = (label: string, words: string[]) => {
-      if (!buckets.has(label)) {
-        buckets.set(label, []);
-        order.push(label);
-      }
-      buckets.get(label)!.push(...words);
-    };
-    for (const s of view.def.senses) {
-      add("Synonyms", s.synonyms);
-      for (const g of s.related) add(g.label, g.words);
-    }
+  // Per-sense nym rows for the define view, mirroring the main site:
+  // each sense keeps its own Synonyms row first, then its related-word
+  // groups in API order. Nothing is merged across senses or parts of
+  // speech. Rows are deduplicated and capped at MAX_PER_GROUP chips;
+  // a truncated group notes its remainder in the label.
+  const senseBlocks = useMemo((): SenseBlock[] => {
+    if (view.name !== "define") return [];
     const self = view.def.word.toLowerCase();
-    const out: { label: string; words: string[] }[] = [];
-    for (const label of order) {
-      const seen = new Set<string>();
-      const uniq: string[] = [];
-      for (const w of buckets.get(label)!) {
-        const k = w.toLowerCase();
-        if (k === self || seen.has(k)) continue;
-        seen.add(k);
-        uniq.push(w);
-        if (uniq.length >= MAX_PER_GROUP) break;
-      }
-      if (uniq.length > 0) out.push({ label, words: uniq });
-    }
-    return out;
+    let flat = 0;
+    return view.def.senses.map((s) => {
+      const rows: NymRow[] = [];
+      const push = (label: string, words: string[], more: number) => {
+        const seen = new Set<string>();
+        const uniq: string[] = [];
+        for (const w of words) {
+          const k = w.toLowerCase();
+          if (k === self || seen.has(k)) continue;
+          seen.add(k);
+          uniq.push(w);
+          if (uniq.length >= MAX_PER_GROUP) break;
+        }
+        if (uniq.length === 0) return;
+        rows.push({
+          label: more > 0 ? `${label} (+${more})` : label,
+          words: uniq,
+          flat: flat++,
+        });
+      };
+      push("Synonyms", s.synonyms, 0);
+      for (const g of s.related) push(g.label, g.words, g.more);
+      return { sense: s, rows };
+    });
   }, [view]);
+  const flatRows = useMemo(
+    () => senseBlocks.flatMap((b) => b.rows),
+    [senseBlocks]
+  );
 
   const focusKey = useMemo(() => {
     if (view.name === "search") return searchFkey(sFocus);
@@ -232,13 +238,14 @@ export default function GlassesPage() {
   );
 
   // 2-D focus for the define view: up/down moves between the Back button
-  // and the related-word group rows, left/right moves within a row.
+  // and the per-sense nym rows, left/right moves within a row.
   // Vertical moves keep a preferred column, clamped to the row length.
   const moveDefine = useCallback(
     (dir: Dir) => {
       setView((v) => {
         if (v.name !== "define") return v;
-        const rowLen = (r: number) => (r === 0 ? 1 : groups[r - 1].words.length);
+        const rowLen = (r: number) =>
+          r === 0 ? 1 : flatRows[r - 1].words.length;
         let { row, col } = v.focus;
         if (dir === "left" || dir === "right") {
           col =
@@ -250,13 +257,13 @@ export default function GlassesPage() {
           row =
             dir === "up"
               ? Math.max(0, row - 1)
-              : Math.min(groups.length, row + 1);
+              : Math.min(flatRows.length, row + 1);
           col = Math.min(prefCol.current, rowLen(row) - 1);
         }
         return { ...v, focus: { row, col } };
       });
     },
-    [groups]
+    [flatRows]
   );
 
   const pressKey = useCallback((key: string) => {
@@ -466,38 +473,42 @@ export default function GlassesPage() {
               <div className={styles.wordtitle}>{view.def.word}</div>
             </div>
             <div ref={defScrollRef} className={styles.defscroll}>
-              {view.def.senses.map((s) => (
-                <div key={`${s.pos}${s.n}`} className={styles.sense}>
-                  <div className={styles.senseHead}>
-                    {POS_NAMES[s.pos] ?? s.pos} · {s.n}
+              {senseBlocks.map((b) => (
+                <div key={`${b.sense.pos}${b.sense.n}`}>
+                  <div className={styles.sense}>
+                    <div className={styles.senseHead}>
+                      {POS_NAMES[b.sense.pos] ?? b.sense.pos} · {b.sense.n}
+                    </div>
+                    <div className={styles.senseDef}>{b.sense.definition}</div>
+                    {b.sense.examples[0] ? (
+                      <div className={styles.senseEx}>
+                        &ldquo;{b.sense.examples[0]}&rdquo;
+                      </div>
+                    ) : null}
                   </div>
-                  <div className={styles.senseDef}>{s.definition}</div>
-                  {s.examples[0] ? (
-                    <div className={styles.senseEx}>&ldquo;{s.examples[0]}&rdquo;</div>
-                  ) : null}
-                </div>
-              ))}
-              {groups.map((g, gi) => (
-                <div key={g.label} className={styles.group}>
-                  <div className={styles.grouplabel}>{g.label}</div>
-                  <div className={styles.chiprow}>
-                    {g.words.map((w, wi) => {
-                      const fk = `d${gi + 1}-${wi}`;
-                      return (
-                        <button
-                          key={`${w}-${wi}`}
-                          type="button"
-                          data-fkey={fk}
-                          data-on={focusKey === fk}
-                          tabIndex={-1}
-                          className={styles.chip}
-                          onClick={() => doDefine(w)}
-                        >
-                          {w}
-                        </button>
-                      );
-                    })}
-                  </div>
+                  {b.rows.map((r) => (
+                    <div key={r.label} className={styles.group}>
+                      <div className={styles.grouplabel}>{r.label}</div>
+                      <div className={styles.chiprow}>
+                        {r.words.map((w, wi) => {
+                          const fk = `d${r.flat + 1}-${wi}`;
+                          return (
+                            <button
+                              key={`${w}-${wi}`}
+                              type="button"
+                              data-fkey={fk}
+                              data-on={focusKey === fk}
+                              tabIndex={-1}
+                              className={styles.chip}
+                              onClick={() => doDefine(w)}
+                            >
+                              {w}
+                            </button>
+                          );
+                        })}
+                      </div>
+                    </div>
+                  ))}
                 </div>
               ))}
               <div className={styles.attr}>Open English WordNet · CC-BY 4.0</div>

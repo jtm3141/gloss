@@ -14,10 +14,10 @@
       "icon": "assets/icon.png",
       "target": [
         {
+          "target": "tar.gz",
           "arch": [
             "x64"
-          ],
-          "target": "AppImage"
+          ]
         }
       ]
     },
@@ -53,9 +53,13 @@
           "target": "nsis"
         }
       ]
-    }
+    },
+    "asarUnpack": [
+      "web/gloss.db.gz",
+      "web/sql-wasm-browser.wasm"
+    ]
   },
-  "description": "gloss desktop app \u2014 the same dictionary as the website, in a native window",
+  "description": "gloss desktop app — the same dictionary as the website, in a native window",
   "devDependencies": {
     "electron": "^36.0.0",
     "electron-builder": "^26.0.0"

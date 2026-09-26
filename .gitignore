@@ -31,3 +31,11 @@ bindings/js/dist/
 Thumbs.db
 .vscode/
 .idea/
+
+# Desktop app (rebuilt by desktop build scripts)
+desktop/release/
+desktop/web/
+
+# Local desktop dev artifacts (never commit)
+web/*.log
+web/start-prod.cmd

@@ -22,6 +22,7 @@ try {
   execSync("npm run prepare-data", { stdio: "inherit", env: process.env });
   if (existsSync(apiDir)) renameSync(apiDir, stashDir);
   execSync("npx next build", { stdio: "inherit", env: process.env });
+  execSync("node scripts/fix-desktop-paths.mjs", { stdio: "inherit", env: process.env });
 } finally {
   if (existsSync(stashDir)) renameSync(stashDir, apiDir);
 }

@@ -98,7 +98,7 @@ change.
 
 ## Icon
 
-`assets/icon.png` is the source. `assets/icon.ico` is generated from it by
+`assets/icon-master-1024.png is the source (green rounded square, gloss in Georgia Bold, the website wordmark face). `assets/icon.png (256px) is downscaled from it, and `assets/icon.ico is generated from that by
 wrapping the PNG in the ICO container (Windows accepts PNG-compressed ICO
 entries):
 

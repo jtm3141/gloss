@@ -26,6 +26,7 @@ export type { Definition, RelatedGroup, Sense };
 export { MAX_RELATED_SHOWN };
 
 export const IS_REMOTE = process.env.NEXT_PUBLIC_GLOSS_TARGET !== "desktop";
+export const IS_DESKTOP = process.env.NEXT_PUBLIC_GLOSS_TARGET === "desktop";
 
 export type DbStatus =
   | { state: "loading"; detail: string }

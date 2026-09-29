@@ -66,6 +66,38 @@ export default function LicensePage() {
           </li>
         </ul>
 
+        <h2>Pronunciations</h2>
+        <p>
+          Pronunciations come from two sources, recorded per row in the
+          database (<code>meta.pronunciation_sources</code>):
+        </p>
+        <ul>
+          <li>
+            The OEWN distribution itself (IPA with US/GB and other regional
+            varieties) — same{" "}
+            <a href="https://creativecommons.org/licenses/by/4.0/">
+              CC-BY 4.0
+            </a>{" "}
+            as the dictionary data above.
+          </li>
+          <li>
+            The{" "}
+            <a href="https://github.com/cmusphinx/cmudict">
+              CMU Pronouncing Dictionary
+            </a>{" "}
+            (© 1993–2015 Carnegie Mellon University, BSD-2-Clause-style
+            terms), used to fill in words OEWN doesn&rsquo;t cover.
+          </li>
+        </ul>
+        <p>
+          The friendly phonetic respellings shown on this site are computed at
+          build time from the IPA by a Python port of{" "}
+          <a href="https://github.com/attacktive/ipa-to-pronunciation-respelling">
+            attacktive/ipa-to-pronunciation-respelling
+          </a>{" "}
+          (MIT). Developers using the gloss libraries also get the raw IPA.
+        </p>
+
         <h2>Content filtering</h2>
         <p>
           The public site and apps ship a family-safe build: taboo/offensive

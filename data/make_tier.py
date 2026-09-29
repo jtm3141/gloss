@@ -273,6 +273,16 @@ def main():
             (tuple(r) for r in src.execute("SELECT * FROM content_flag_synset")
              if (r["synset_offset"], r["pos"]) in kept_synsets))
 
+    # Pronunciations follow their lemmas into the tier.
+    if "pronunciation" in have:
+        dst.executemany(
+            "INSERT INTO pronunciation(lemma_id, variety, ipa, respelling,"
+            " respelling_syll, source) VALUES(?,?,?,?,?,?)",
+            (tuple(r) for r in src.execute(
+                "SELECT lemma_id, variety, ipa, respelling, respelling_syll,"
+                " source FROM pronunciation")
+             if r["lemma_id"] in kept_lemma_ids))
+
     for r in src.execute("SELECT key, value FROM meta"):
         dst.execute("INSERT INTO meta(key, value) VALUES(?,?)",
                     (r["key"], r["value"]))

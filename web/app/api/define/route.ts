@@ -1,9 +1,8 @@
 import { NextRequest, NextResponse } from "next/server";
 import { defineWord } from "@/lib/dict";
 
-// Dictionary data is immutable per OEWN edition, so responses are
-// edge-cacheable for a long time.
-const CACHE = "public, s-maxage=86400, stale-while-revalidate=86400";
+// No caching: the site stays simple with no stale-data surprises.
+const CACHE = "no-store";
 
 export async function GET(req: NextRequest) {
   const word = req.nextUrl.searchParams.get("word")?.trim() ?? "";

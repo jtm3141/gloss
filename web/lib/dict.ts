@@ -9,7 +9,9 @@ import { createClient, type Client } from "@libsql/client";
 import {
   groupRelated,
   parseExamples,
+  shapePronunciations,
   type Definition,
+  type Pronunciation,
   type RelatedGroup,
   type RelationRow,
   type Sense,
@@ -105,7 +107,32 @@ export async function defineWord(raw: string): Promise<Definition | null> {
     // Drop the internal-only fields before serializing. `synset` stays:
     // it is the public cross-word identity used for synonym deep links.
     .map(({ so: _so, srcWp: _srcWp, ...rest }) => rest);
-  return { word, senses: clean };
+  const pronunciations = await fetchPronunciations(db, word);
+  return { word, senses: clean, pronunciations };
+}
+
+// Pronunciations for the word, deduplicated and ordered for display (see
+// shapePronunciations). Degrades gracefully: if the table predates the
+// respelling_syll column (production DB before the pronunciation update),
+// the plain respelling stands in; if there is no pronunciation table at
+// all, the word simply has no pronunciations.
+async function fetchPronunciations(db: Client, word: string): Promise<Pronunciation[]> {
+  const base = (extra: string) =>
+    `SELECT l.pos AS pos, p.variety AS variety, p.ipa AS ipa, p.respelling AS respelling,${extra}
+            p.source AS source
+     FROM pronunciation p JOIN lemma l ON l.id = p.lemma_id
+     WHERE l.lemma = ? COLLATE NOCASE`;
+  const shape = (rs: { rows: unknown }) =>
+    shapePronunciations(rs.rows as Array<Record<string, unknown>>);
+  try {
+    return shape(await db.execute({ sql: base(" p.respelling_syll AS syllabified,"), args: [word] }));
+  } catch {
+    try {
+      return shape(await db.execute({ sql: base(""), args: [word] }));
+    } catch {
+      return [];
+    }
+  }
 }
 
 export async function suggest(prefix: string): Promise<string[]> {

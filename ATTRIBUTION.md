@@ -91,11 +91,36 @@ OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
 ```
 
-## Pronunciation data — CMUdict (planned, not yet imported)
+## Pronunciation data
 
-Pronunciation (IPA) support is planned from CMUdict (Carnegie Mellon
-Pronouncing Dictionary), which is BSD-licensed. No pronunciation data is
-in the database yet; this section is a placeholder until it lands.
+The `pronunciation` table (one row per distinct pronunciation) carries two
+renderings per row: the source IPA and a precomputed friendly respelling
+for display. Clients show the respelling; developers also get the IPA.
+
+- **OEWN LMF XML pronunciations** — same CC-BY 4.0 as the dictionary data
+  above (part of the OEWN distribution, `english-wordnet-2024.xml.gz`):
+  IPA with stress marks in US, GB, AU, NZ, CA, IE, ZA, and SG varieties,
+  covering ~21% of entries. Unmarked values are plain respellings from the
+  source itself and are kept verbatim.
+- **CMU Pronouncing Dictionary** — <https://github.com/cmusphinx/cmudict> —
+  © 1993–2015 Carnegie Mellon University, BSD-2-Clause-style terms
+  (redistribution permitted with the copyright notice and conditions
+  retained; CMU asks that users acknowledge the dictionary's origin —
+  this section is that acknowledgment). North American ARPAbet entries are
+  converted to IPA at build time and used only to backfill lemmas the OEWN
+  XML doesn't cover (provenance per row: `source='cmudict'`).
+- **Friendly respellings** — precomputed at build time by
+  `data/respell.py`, a Python port of
+  [attacktive/ipa-to-pronunciation-respelling](https://github.com/attacktive/ipa-to-pronunciation-respelling)
+  (**MIT**, © Attacktive), which maps IPA to plain-English chunks
+  (e.g. `ˈdɪkʃənɛri` → `DIHKshuhnehree`), syllabifies, and uppercases the
+  primary-stressed syllable. A few rare IPA diacritics (nasalization,
+  centralization, voicing tweaks, …) are stripped rather than failing the
+  conversion — documented as deviations in `respell.py`.
+
+Provenance: every row carries `source` (`oewn`/`cmudict`); every built
+database records `meta.pronunciation_sources` (exact files/URLs) and
+`meta.pronunciation_counts` (rows per source, lemmas covered).
 
 ## Our code
 

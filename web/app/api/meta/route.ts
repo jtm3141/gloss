@@ -1,7 +1,8 @@
 import { NextResponse } from "next/server";
 import { dbMeta } from "@/lib/dict";
 
-const CACHE = "public, s-maxage=86400, stale-while-revalidate=86400";
+// No caching: the site stays simple with no stale-data surprises.
+const CACHE = "no-store";
 
 export async function GET() {
   try {

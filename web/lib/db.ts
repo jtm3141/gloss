@@ -15,14 +15,16 @@ import {
   MAX_RELATED_SHOWN,
   groupRelated,
   parseExamples,
+  shapePronunciations,
   type Definition,
+  type Pronunciation,
   type RelatedGroup,
   type RelationRow,
   type Sense,
 } from "./relations";
 
 // Re-export the shared surface so UI imports stay on "@/lib/db".
-export type { Definition, RelatedGroup, Sense };
+export type { Definition, Pronunciation, RelatedGroup, Sense };
 export { MAX_RELATED_SHOWN };
 
 export const IS_REMOTE = process.env.NEXT_PUBLIC_GLOSS_TARGET !== "desktop";
@@ -153,7 +155,17 @@ export async function defineWord(raw: string): Promise<Definition | null> {
   const clean: Sense[] = senses
     .sort((a, b) => POS_RANK[a.pos] - POS_RANK[b.pos] || a.n - b.n)
     .map(({ so: _so, srcWp: _srcWp, ...rest }) => rest);
-  return { word, senses: clean };
+  const pronunciations = shapePronunciations(
+    rows(
+      db.exec(
+        `SELECT l.pos AS pos, p.variety AS variety, p.ipa AS ipa, p.respelling AS respelling,
+                p.respelling_syll AS syllabified, p.source AS source
+         FROM pronunciation p JOIN lemma l ON l.id = p.lemma_id
+         WHERE l.lemma = '${word.replace(/'/g, "''")}' COLLATE NOCASE`
+      )[0]
+    )
+  );
+  return { word, senses: clean, pronunciations };
 }
 
 export async function suggest(prefix: string): Promise<string[]> {

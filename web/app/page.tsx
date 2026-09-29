@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useRef, useState } from "react";
-import { defineWord, suggest, loadDb, dbMeta, MAX_RELATED_SHOWN, IS_REMOTE, IS_DESKTOP, type Definition, type Sense, type DbStatus } from "@/lib/db";
+import { defineWord, suggest, loadDb, dbMeta, MAX_RELATED_SHOWN, IS_REMOTE, IS_DESKTOP, type Definition, type Pronunciation, type Sense, type DbStatus } from "@/lib/db";
 
 const POS_NAMES: Record<string, string> = {
   n: "noun",
@@ -9,6 +9,48 @@ const POS_NAMES: Record<string, string> = {
   a: "adjective",
   r: "adverb",
 };
+
+// Group pronunciations by part of speech for display. POS groups whose
+// pronunciation sets are identical are merged ("adjective, adverb"),
+// since e.g. "live" is /laɪv/ for both. Groups come out in POS order.
+function groupPronunciations(prons: Pronunciation[]): {
+  labels: string[];
+  items: Pronunciation[];
+}[] {
+  const byPos = new Map<string, Pronunciation[]>();
+  for (const p of prons) {
+    const list = byPos.get(p.pos);
+    if (list) list.push(p);
+    else byPos.set(p.pos, [p]);
+  }
+  const merged = new Map<
+    string,
+    { labels: string[]; items: Pronunciation[] }
+  >();
+  for (const [pos, items] of byPos) {
+    const sig = items.map((p) => `${p.variety}|${p.syllabified}`).join(";");
+    const m = merged.get(sig);
+    if (m) m.labels.push(pos);
+    else merged.set(sig, { labels: [pos], items });
+  }
+  return [...merged.values()];
+}
+
+// Render a syllabified respelling with breathing room around the dots:
+// "ab·uh·RAY·shn" -> ab · uh · RAY · shn (spacing via CSS, data untouched).
+function renderSyllabified(syllabified: string) {
+  const parts = syllabified.split("\u00b7");
+  return parts.map((part, i) => (
+    <span key={i}>
+      {part}
+      {i < parts.length - 1 && (
+        <span className="pron-dot" aria-hidden="true">
+          {"\u00b7"}
+        </span>
+      )}
+    </span>
+  ));
+}
 
 // Plain-text rendering of one sense, for the clipboard: just the
 // definition, followed on the same line by an em-dash attribution.
@@ -392,6 +434,13 @@ export default function Home() {
       }))
     : [];
 
+  const pronGroups = result?.pronunciations?.length
+    ? groupPronunciations(result.pronunciations)
+    : [];
+  // POS labels only when the word is pronounced differently by part of
+  // speech (e.g. "live": verb /lɪv/, adjective /laɪv/).
+  const showPronPos = pronGroups.length > 1;
+
   return (
     <div className="page">
       <div className={`hero${searched ? " compact" : ""}`}>
@@ -465,6 +514,35 @@ export default function Home() {
                 ariaLabel={`Copy link to ${result.word}`}
               />
             </div>
+            {pronGroups.length > 0 && (
+              <div className="pronunciation" aria-label="Pronunciation">
+                <span className="pron-label">Pronunciation</span>
+                {pronGroups.map((g) => (
+                  <span
+                    key={g.labels.join(",")}
+                    className={showPronPos ? "pron-line" : undefined}
+                  >
+                    {showPronPos && (
+                      <span className="pron-pos">
+                        {g.labels.map((l) => POS_NAMES[l] ?? l).join(", ")}
+                      </span>
+                    )}
+                    {g.items.map((p, i) => (
+                      <span key={`${p.variety}-${i}`} title={p.ipa || undefined}>
+                        {(g.items.length > 1 || showPronPos) &&
+                          p.variety !== "" && (
+                            <span className="pron-variety">{p.variety}</span>
+                          )}
+                        <span className="pron-text">{renderSyllabified(p.syllabified)}</span>
+                        {i < g.items.length - 1 && (
+                          <span className="pron-sep" aria-hidden="true">; </span>
+                        )}
+                      </span>
+                    ))}
+                  </span>
+                ))}
+              </div>
+            )}
             {groups.map(({ pos, senses }) => (
               <div className="posgroup" key={pos}>
                 <div className="poslabel">{POS_NAMES[pos] ?? pos}</div>

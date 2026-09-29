@@ -11,18 +11,27 @@ Usage:
     python build_db.py --zip path/to.zip     # build from a local zip
     python build_db.py --dir path/to/wndb    # build from an extracted dir
 
+Pronunciations: the OEWN LMF XML (downloaded automatically) contributes
+IPA for ~21% of entries; CMUdict backfills the rest. Both land in the
+`pronunciation` table with a precomputed friendly `respelling` column.
+Use --no-pronunciation to skip.
+
 Output: data/gloss.db (next to this script, unless --db is given).
 """
 
 import argparse
 import datetime as dt
+import gzip
 import json
 import os
 import re
 import sqlite3
 import sys
 import urllib.request
+import xml.etree.ElementTree as ET
 import zipfile
+
+import respell
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 
@@ -30,6 +39,8 @@ EDITIONS = {
     # Published counts from the OEWN README (words/synsets/relations).
     "2024": {
         "url": "https://en-word.net/downloads/english-wordnet-2024.zip",
+        "xml_url": "https://en-word.net/static/english-wordnet-2024.xml.gz",
+        "cmudict_url": "https://raw.githubusercontent.com/cmusphinx/cmudict/master/cmudict.dict",
         "synsets": 120630,
         "relations": 419168,
         "words": 161705,
@@ -118,6 +129,28 @@ CREATE TABLE synset_word(
     PRIMARY KEY(synset_offset, pos, word_pos)
 );
 CREATE INDEX idx_synset_word_lemma ON synset_word(lemma_id);
+-- Pronunciations. OEWN ships IPA for ~21% of English entries (US/GB
+-- varieties, same CC-BY 4.0 as the rest); CMUdict backfills the rest.
+-- respelling is the friendly phonetic rendering, precomputed at build
+-- time so clients need no phonetics dependency: websites/apps show the
+-- respelling, developers also get the IPA. respelling_syll is the same
+-- respelling with syllable boundaries marked (U+00B7 middle dot),
+-- e.g. "DIHK·shuh·neh·ree"; for verbatim source text (plain-text OEWN
+-- values like "wan", failed conversions) it equals respelling.
+-- Pronunciations attach to (lemma, pos) rows, so a word like "live"
+-- can carry /lɪv/ for the verb and /laɪv/ for the adjective.
+-- Display pick order: US, then GB, then other varieties (AU/NZ/CA/IE/
+-- ZA/SG), then unmarked, then cmudict (see web/lib/dict.ts).
+CREATE TABLE pronunciation(
+    lemma_id INTEGER NOT NULL REFERENCES lemma(id),
+    variety TEXT NOT NULL,          -- US | GB | AU | ... | '' (unmarked)
+    ipa TEXT NOT NULL,
+    respelling TEXT NOT NULL,
+    respelling_syll TEXT NOT NULL,
+    source TEXT NOT NULL,           -- oewn | cmudict
+    PRIMARY KEY(lemma_id, variety, source, ipa)  -- one row per distinct pronunciation
+);
+CREATE INDEX idx_pronunciation_lemma ON pronunciation(lemma_id);
 """
 
 EXAMPLE_RE = re.compile(r'"([^"]*)"')
@@ -202,13 +235,165 @@ def find_wndb_dir(root):
     raise FileNotFoundError("data.noun not found under " + root)
 
 
+def _localname(tag):
+    return tag.rsplit("}", 1)[-1]
+
+
+def parse_oewn_pronunciations(xml_path):
+    """Yield (written_form, pos, variety, ipa) from OEWN's LMF XML.
+
+    Streaming iterparse; the 2024 file is ~100 MB uncompressed.
+    <Pronunciation> elements live under <Lemma> inside <LexicalEntry>:
+        <LexicalEntry id="oewn-0-n">
+          <Lemma writtenForm="0" partOfSpeech="n">
+            <Pronunciation variety="US">ˈziːɹəʊ</Pronunciation>
+    Most US/GB values are IPA with stress marks; unmarked ones are
+    usually plain respellings (e.g. "wan" for "1") but occasionally
+    genuine IPA (e.g. "lɪv" for the verb "live"); see _looks_like_ipa.
+    """
+    n_lex = n_pron = 0
+    with gzip.open(xml_path, "rb") as f:
+        ctx = ET.iterparse(f, events=("start", "end"))
+        lemma = None  # (written_form, pos) of the enclosing <Lemma>
+        for event, elem in ctx:
+            tag = _localname(elem.tag)
+            if event == "start" and tag == "Lemma":
+                lemma = (elem.get("writtenForm", ""),
+                         elem.get("partOfSpeech", ""))
+            elif event == "end" and tag == "Pronunciation":
+                n_pron += 1
+                if lemma is not None:
+                    ipa = (elem.text or "").strip()
+                    if ipa:
+                        yield (lemma[0], lemma[1],
+                               elem.get("variety") or "", ipa)
+                elem.clear()
+            elif event == "end" and tag == "LexicalEntry":
+                n_lex += 1
+                lemma = None
+                elem.clear()
+    print(f"oewn xml: {n_lex} lexical entries, {n_pron} pronunciation elements")
+
+
+# --- CMUdict backfill -------------------------------------------------------
+# CMU Pronouncing Dictionary: ~134k North American English words in
+# ARPAbet. Permissive BSD-style terms (attribution in ATTRIBUTION.md).
+# Used ONLY for lemmas with no OEWN pronunciation; provenance is kept
+# per row (source='cmudict').
+
+_ARPA_VOWELS = {
+    "AA": "ɑ", "AE": "æ", "AH": "ʌ", "AO": "ɔ", "AW": "aʊ", "AY": "aɪ",
+    "EH": "ɛ", "ER": "ɝ", "EY": "eɪ", "IH": "ɪ", "IY": "i", "OW": "oʊ",
+    "OY": "ɔɪ", "UH": "ʊ", "UW": "u",
+}
+_ARPA_CONS = {
+    "B": "b", "CH": "tʃ", "D": "d", "DH": "ð", "F": "f", "G": "ɡ",
+    "HH": "h", "JH": "dʒ", "K": "k", "L": "l", "M": "m", "N": "n",
+    "NG": "ŋ", "P": "p", "R": "ɹ", "S": "s", "SH": "ʃ", "T": "t",
+    "TH": "θ", "V": "v", "W": "w", "Y": "j", "Z": "z", "ZH": "ʒ",
+}
+_ARPA_WORD = re.compile(r"^([A-Za-z’-]+)(?:\(\d+\))?$")  # cmusphinx master ships lowercase words
+_ARPA_PHONE = re.compile(r"^([A-Z]+)([012])?$")
+
+
+def load_cmudict(path):
+    """{WORD: 'phonemes...'} — first pronunciation variant wins."""
+    d = {}
+    with open(path, encoding="utf-8") as f:
+        for line in f:
+            if not line.strip() or line.startswith(";;;"):
+                continue
+            parts = line.split()
+            m = _ARPA_WORD.match(parts[0])
+            if not m:
+                continue
+            word = m.group(1).upper()  # lookups use lemma.upper()
+            if word not in d:
+                d[word] = " ".join(parts[1:])
+    print(f"cmudict: {len(d)} entries from {os.path.basename(path)}")
+    return d
+
+
+def arpa_to_ipa(arpa):
+    """ARPAbet string -> IPA with ˈ/ˌ stress marks.
+
+    Stress digits ride on vowels: 1 -> ˈ, 2 -> ˌ, placed before the
+    stressed syllable's onset (scan left past consonants), matching the
+    convention the respeller expects (ˈdɪkʃənɛri, not dˈɪkʃənɛri).
+    Unstressed AH/ER reduce to schwa/r-colored schwa (AH0 -> ə, ER0 -> ɚ).
+    """
+    phones = []  # (ipa, is_vowel, stress_digit|None)
+    for ph in arpa.split():
+        m = _ARPA_PHONE.match(ph)
+        if not m:
+            raise ValueError(f"bad ARPAbet phone: {ph!r}")
+        base, stress = m.group(1), m.group(2)
+        if base in _ARPA_VOWELS:
+            v = _ARPA_VOWELS[base]
+            if stress == "0":
+                v = {"AH": "ə", "ER": "ɚ"}.get(base, v)
+            phones.append((v, True, stress))
+        elif base in _ARPA_CONS:
+            phones.append((_ARPA_CONS[base], False, None))
+        else:
+            raise ValueError(f"unknown ARPAbet phone: {ph!r}")
+    marks = {}
+    for i, (_v, is_vow, stress) in enumerate(phones):
+        if is_vow and stress in ("1", "2"):
+            j = i
+            while j > 0 and not phones[j - 1][1]:
+                j -= 1
+            marks[j] = "ˈ" if stress == "1" else "ˌ"
+    out = []
+    for i, (v, _is_vow, _s) in enumerate(phones):
+        if i in marks:
+            out.append(marks[i])
+        out.append(v)
+    return "".join(out)
+
+
+def _looks_like_ipa(s):
+    """True if the string contains any non-ASCII character.
+
+    OEWN <Pronunciation> values are either IPA (symbols like
+    \u02c8\u02cc\u02d0\u026a\u0259\u028a) or plain-English respellings
+    ("wan"). The plain ones are pure ASCII, so anything with a
+    non-ASCII codepoint is treated as IPA and run through the
+    converter instead of being kept verbatim.
+    """
+    return any(ord(c) > 127 for c in s)
+
+
+def friendly_respelling(ipa):
+    """IPA -> plain-English respelling; falls back to the IPA itself."""
+    try:
+        return respell.convert(ipa)
+    except ValueError:
+        return ipa
+
+
+def syllabified_respelling(ipa, rs):
+    """IPA -> respelling with syllable dots (U+00B7).
+
+    rs is the friendly_respelling() result for the same ipa. When rs == ipa
+    the value is verbatim source text (or a failed conversion) with no
+    syllable information, so it is returned unchanged.
+    """
+    if rs == ipa:
+        return rs
+    try:
+        return respell.convert_syllabified(ipa)
+    except ValueError:
+        return rs
+
+
 def download(url, dest):
     print(f"downloading {url} ...")
     urllib.request.urlretrieve(url, dest)
     print(f"saved {dest} ({os.path.getsize(dest) / 1e6:.1f} MB)")
 
 
-def build(wndb_dir, db_path, edition, url):
+def build(wndb_dir, db_path, edition, url, xml_path=None, cmudict_path=None):
     if os.path.exists(db_path):
         os.remove(db_path)
     con = sqlite3.connect(db_path)
@@ -286,6 +471,66 @@ def build(wndb_dir, db_path, edition, url):
         " VALUES(?,?,?,?,?)", sw_rows)
     print(f"synset_word rows: {len(sw_rows)} (unmatched: {sw_miss})")
 
+    # --- pronunciations --------------------------------------------------
+    # OEWN's XML first (authoritative IPA, US/GB varieties); CMUdict
+    # backfills lemmas the XML doesn't cover. The friendly respelling is
+    # precomputed per row so shipped clients need no phonetics code.
+    pron_stats = {"oewn": 0, "cmudict": 0, "unmatched": 0,
+                  "respell_fallback": 0}
+    pron_rows, seen = [], set()
+    if xml_path:
+        for wf, pos, variety, ipa in parse_oewn_pronunciations(xml_path):
+            wf = ADJ_MARKER.sub("", wf)
+            lid = lemma_ids.get((wf, pos))
+            if lid is None:
+                lid = lemma_ids.get((wf.lower(), pos))
+            if lid is None:
+                pron_stats["unmatched"] += 1
+                continue
+            key = (lid, variety, "oewn", ipa)
+            if key in seen:
+                continue
+            seen.add(key)
+            if _looks_like_ipa(ipa):
+                rs = friendly_respelling(ipa)
+                rs_syll = syllabified_respelling(ipa, rs)
+                if rs == ipa:
+                    pron_stats["respell_fallback"] += 1
+            else:
+                # Plain-English respelling already (e.g. unmarked "wan").
+                rs = ipa
+                rs_syll = ipa
+            pron_rows.append((lid, variety, ipa, rs, rs_syll, "oewn"))
+            pron_stats["oewn"] += 1
+    if cmudict_path:
+        cmu = load_cmudict(cmudict_path)
+        covered = {r[0] for r in pron_rows}
+        for lid, lemma, _pos in con.execute("SELECT id, lemma, pos FROM lemma"):
+            if lid in covered:
+                continue
+            arpa = cmu.get(lemma.upper())
+            if not arpa:
+                continue
+            try:
+                ipa = arpa_to_ipa(arpa)
+            except ValueError:
+                continue
+            rs = friendly_respelling(ipa)
+            rs_syll = syllabified_respelling(ipa, rs)
+            if rs == ipa:
+                pron_stats["respell_fallback"] += 1
+            pron_rows.append((lid, "", ipa, rs, rs_syll, "cmudict"))
+            pron_stats["cmudict"] += 1
+    con.executemany(
+        "INSERT INTO pronunciation(lemma_id, variety, ipa, respelling,"
+        " respelling_syll, source) VALUES(?,?,?,?,?,?)", pron_rows)
+    n_pron_lemmas = con.execute(
+        "SELECT COUNT(DISTINCT lemma_id) FROM pronunciation").fetchone()[0]
+    print(f"pronunciation rows: {len(pron_rows)} "
+          f"(oewn {pron_stats['oewn']}, cmudict {pron_stats['cmudict']}, "
+          f"unmatched xml {pron_stats['unmatched']}, "
+          f"respell fallbacks {pron_stats['respell_fallback']})")
+
     con.executemany("INSERT INTO meta(key, value) VALUES(?,?)", [
         ("source", "Open English WordNet"),
         ("oewn_edition", edition),
@@ -294,6 +539,18 @@ def build(wndb_dir, db_path, edition, url):
         ("content_policy",
          "canonical DB keeps all entries; content_flag marks taboo/offensive"
          " material for build-time filtering (phone-app builds ship filtered)"),
+        ("pronunciation_sources", json.dumps({
+            "oewn_xml": os.path.basename(xml_path) if xml_path else None,
+            "cmudict": EDITIONS[edition]["cmudict_url"] if cmudict_path else None,
+            "respelling": "attacktive/ipa-to-pronunciation-respelling"
+                          " (MIT), ported to data/respell.py",
+        })),
+        ("pronunciation_counts", json.dumps({
+            "rows": len(pron_rows),
+            "oewn_rows": pron_stats["oewn"],
+            "cmudict_rows": pron_stats["cmudict"],
+            "lemmas_covered": n_pron_lemmas,
+        })),
     ])
     con.commit()
 
@@ -304,6 +561,11 @@ def build(wndb_dir, db_path, edition, url):
     print(f"synsets:   {total_synsets:>8}  (published {exp['synsets']})")
     print(f"relations: {total_relations:>8}  (published {exp['relations']})")
     print(f"lemmas:    {n_lemmas:>8}  senses: {total_senses}")
+    n_pron = con.execute("SELECT COUNT(*) FROM pronunciation").fetchone()[0]
+    n_pron_lemmas = con.execute(
+        "SELECT COUNT(DISTINCT lemma_id) FROM pronunciation").fetchone()[0]
+    print(f"pronunciations: {n_pron:>8} rows covering {n_pron_lemmas} lemmas "
+          f"({100.0 * n_pron_lemmas / n_lemmas:.1f}%)")
     print(f"content_flag rows: {con.execute('SELECT COUNT(*) FROM content_flag').fetchone()[0]}"
           f" (+ {con.execute('SELECT COUNT(*) FROM content_flag_synset').fetchone()[0]} synset flags;"
           " run data/build_flags.py to populate)")
@@ -336,6 +598,15 @@ def main():
     ap.add_argument("--zip", default=None)
     ap.add_argument("--dir", default=None)
     ap.add_argument("--db", default=os.path.join(HERE, "gloss.db"))
+    ap.add_argument("--xml", default=None,
+                    help="OEWN LMF XML for pronunciations "
+                         "(default: data/english-wordnet-<edition>.xml.gz, "
+                         "downloaded if missing)")
+    ap.add_argument("--cmudict", default=None,
+                    help="CMUdict file for pronunciation backfill "
+                         "(default: data/cmudict.dict, downloaded if missing)")
+    ap.add_argument("--no-pronunciation", action="store_true",
+                    help="skip the pronunciation table entirely")
     args = ap.parse_args()
 
     url = EDITIONS[args.edition]["url"]
@@ -355,7 +626,17 @@ def main():
     else:
         ap.error("give one of --download, --zip, or --dir")
     print(f"WNDB dir: {wndb_dir}")
-    ok = build(wndb_dir, args.db, args.edition, url)
+
+    xml_path, cmudict_path = None, None
+    if not args.no_pronunciation:
+        xml_path = args.xml or os.path.join(
+            HERE, f"english-wordnet-{args.edition}.xml.gz")
+        if not os.path.exists(xml_path):
+            download(EDITIONS[args.edition]["xml_url"], xml_path)
+        cmudict_path = args.cmudict or os.path.join(HERE, "cmudict.dict")
+        if not os.path.exists(cmudict_path):
+            download(EDITIONS[args.edition]["cmudict_url"], cmudict_path)
+    ok = build(wndb_dir, args.db, args.edition, url, xml_path, cmudict_path)
     sys.exit(0 if ok else 1)
 
 

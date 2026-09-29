@@ -12,6 +12,7 @@ venv/
 data/wndb/
 data/.cache/
 data/*.bin
+data/cmudict.dict
 
 # C
 build/

@@ -19,9 +19,12 @@ C:\Users\<user>\miniconda3\python.exe data\build_db.py --download
      definitions, examples.
    - `relation` — raw WNDB pointers (`@` hypernym, `!` antonym, `~` hyponym,
      `#p` part meronym, …), synset- or word-level.
-   - `content_flag` — taboo/offensive markings for build-time filtering.
-     Empty in v1 (population is a follow-up); the schema and the filtering
-     contract are live from day one.
+   - `content_flag` — taboo/offensive markings for build-time filtering
+     (populated by `data/build_flags.py`; the schema and the filtering
+     contract are live from day one).
+   - `pronunciation` — IPA + precomputed friendly respelling per lemma,
+     from the OEWN LMF XML with a CMUdict backfill (see "Pronunciations"
+     below). Clients show the respelling; developers also get the IPA.
 4. Validates synset counts against the edition's published numbers
    (must match within 1%) and prints a report.
 
@@ -169,6 +172,65 @@ routed by audit — whole-synset only when every member is a slur in
 that sense (redneck/cracker), lemma-level otherwise ('blackamoor'
 flagged, neutral 'black person' survives). Unlisted cases fail the
 build rather than silently dropping neutral content.
+
+## Pronunciations
+
+`build_db.py` parses the OEWN LMF XML (`english-wordnet-2024.xml.gz`,
+downloaded automatically — same CC-BY 4.0 as the rest of OEWN) for
+`<Pronunciation>` elements and backfills the gaps from CMUdict
+(downloaded automatically, `data/cmudict.dict` — gitignored). Both land in:
+
+- `pronunciation(lemma_id, variety, ipa, respelling, respelling_syll, source)` —
+  `PRIMARY KEY(lemma_id, variety, source, ipa)`: one row per distinct
+  pronunciation, so a word with US and GB variants keeps both.
+  `variety` is `US`/`GB`/`AU`/`NZ`/`CA`/`IE`/`ZA`/`SG` or `''` (unmarked);
+  `source` is `oewn` or `cmudict`. `respelling_syll` is the friendly
+  respelling with syllable boundaries marked `·` (U+00B7), e.g.
+  `DIHK·shuh·neh·ree`; clients display it.
+
+The friendly `respelling` is precomputed at build time by
+`data/respell.py` (a Python port of the MIT-licensed
+attacktive/ipa-to-pronunciation-respelling), so shipped clients need no
+phonetics dependency. `respell.convert_syllabified()` produces the
+same string with `·` syllable separators, using the same parser and
+syllabifier (verified byte-identical to `convert()` with separators
+removed over all 52,415 database IPA values). OEWN values already in plain text (pure ASCII, e.g. `wan` for "1")
+are kept verbatim. Any value with a non-ASCII codepoint is treated as
+IPA and converted — this covers unmarked values that are genuine IPA
+(e.g. `lɪv` for the verb "live") and non-US/GB varieties (AU/CA/NZ/IE/ZA/SG).
+If the converter can't handle an IPA string it falls back to the IPA
+itself (5 rows in the 2024 build — three comma-joined multi-variant
+rarities plus `hm`/`m`, which respell to themselves).
+
+Pronunciations attach to (lemma, pos) rows, so a word like "live" can
+carry /lɪv/ for the verb and /laɪv/ for the adjective and adverb; the
+website shows them grouped by part of speech when they differ.
+OEWN's IPA sometimes carries its own explicit syllable dots (`.`), e.g.
+`ˌæb.əˈreɪ.ʃən` for "aberration"; the syllabified respelling renders those
+as `·` just like its own computed boundaries (`ab·uh·RAY·shn`), while real
+word spaces (multi-word pronunciations) stay spaces. The plain
+`respelling` column keeps the historical space rendering and is
+byte-identical before and after this normalization.
+
+Pipeline: XML is parsed with streaming `iterparse`; ARPAbet stress digits
+become `ˈ`/`ˌ` placed before the stressed syllable's onset
+(`K AE1 T` → `ˈkæt`); CMUdict matches `lemma.upper()` exactly and only
+fills lemmas the XML doesn't cover. Display pick order for clients:
+US, then GB, then other varieties, then unmarked, then cmudict — and
+dedupe on `(ipa, respelling)`, since a word's noun/verb/adjective lemma
+rows can share the same pronunciation.
+
+Coverage (OEWN 2024 build): 62,364 rows — 43,628 OEWN + 18,736 CMUdict —
+covering 51,275 lemmas (32.0%). Single words mostly; multiword lemmas
+("ice cream") have no pronunciation and clients simply show none.
+Provenance: `meta.pronunciation_sources` (exact files/URLs) and
+`meta.pronunciation_counts` (rows per source, lemmas covered).
+
+`make_filtered.py` drops pronunciations whose lemma was filtered and
+reports them; `make_tier.py` copies only kept lemmas' pronunciations.
+Rebuild flags after the DB: `python data/build_flags.py --db data/gloss.db`
+(the pronunciation import doesn't touch flags, but a fresh DB starts
+unflagged). Skip the table entirely with `build_db.py --no-pronunciation`.
 
 ## Known limitations
 

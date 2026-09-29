@@ -213,6 +213,64 @@ input[type="text"]:focus {
   overflow-wrap: break-word;
 }
 
+/* Friendly phonetic respelling under the word head, with · syllable
+   separators (hover reveals the IPA). */
+.pronunciation {
+  font-size: 14px;
+  color: var(--text-secondary);
+  margin: 0 0 4px;
+  overflow-wrap: break-word;
+}
+
+.pron-label {
+  display: block;
+  font-size: 12px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: var(--text-tertiary);
+  margin-bottom: 2px;
+}
+
+.pron-text {
+  font-style: italic;
+}
+
+/* Breathing room around the · syllable separators (data keeps the bare
+   dot; spacing is purely presentational). */
+.pron-dot {
+  margin: 0 0.22em;
+}
+
+.pron-variety {
+  font-size: 12px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--text-tertiary);
+  margin-right: 6px;
+}
+
+/* Part-of-speech label, shown only when a word is pronounced
+   differently by part of speech (e.g. "live": verb LIHV,
+   adjective LEYV). One line per POS group. */
+.pron-pos {
+  font-size: 12px;
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  color: var(--text-tertiary);
+  margin-right: 6px;
+}
+
+.pron-line {
+  display: block;
+}
+
+.pron-sep {
+  color: var(--text-tertiary);
+  margin: 0 8px;
+}
+
 .posgroup {
   margin-top: 24px;
 }

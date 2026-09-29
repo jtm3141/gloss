@@ -27,6 +27,34 @@ When the dictionary is rebuilt from a newer OEWN edition, repeat the
 site picks it up with no code changes — API responses are edge-cached, so
 allow up to a day for the CDN to roll over, or purge from the Vercel dashboard.
 
+### Surgical update: importing one table
+
+For a small addition (e.g. the `pronunciation` table, 2026-09-26), a full
+re-upload is wasteful — import just the table instead. Generate the dump
+from the new filtered build and load it through the Turso shell:
+
+```powershell
+cd C:\Users\<user>\Dev\gloss\data
+C:\Users\<user>\miniconda3\python.exe makedump.py        # writes pronunciation-update.sql
+
+# back up the live database first
+turso db shell gloss .dump > turso-backup-YYYY-MM-DD.sql
+
+# load the new table (drops and recreates `pronunciation`, stamps meta)
+turso db shell gloss < pronunciation-update.sql
+```
+
+Verify on the live database before touching the site:
+
+```powershell
+turso db shell gloss "SELECT COUNT(*) FROM pronunciation;"
+turso db shell gloss "SELECT value FROM meta WHERE key='pronunciation_counts';"
+turso db shell gloss "SELECT ipa, respelling, source FROM pronunciation p JOIN lemma l ON l.id=p.lemma_id WHERE l.lemma='water' LIMIT 3;"
+```
+
+Rollback is `DROP TABLE pronunciation;` on the live DB (or restore the
+backup dump). No token or URL changes: the database name stays `gloss`.
+
 ## 2. Vercel — one time
 
 ```powershell

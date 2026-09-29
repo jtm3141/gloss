@@ -23,6 +23,72 @@ export interface Sense {
 export interface Definition {
   word: string;
   senses: Sense[];
+  pronunciations?: Pronunciation[];
+}
+
+// One pronunciation row for the public API. `syllabified` is the friendly
+// respelling with syllable boundaries marked (U+00B7 middle dot), e.g.
+// "DIHK·shuh·neh·ree"; the website shows it, developers also get `ipa`.
+// `variety` is the display variety: CMUdict rows are General American, so
+// they report "US"; "" means the source gave no variety. `pos` is the
+// OEWN part of speech the pronunciation belongs to (n/v/a/r) —
+// pronunciations attach to (lemma, pos), so "live" can carry /lɪv/ for
+// the verb and /laɪv/ for the adjective.
+export interface Pronunciation {
+  pos: string;
+  variety: string;
+  ipa: string;
+  respelling: string;
+  syllabified: string;
+  source: string; // "oewn" | "cmudict"
+}
+
+// Part-of-speech order, then the variety pick order documented in
+// data/build_db.py: US, GB, other regional varieties, unmarked, cmudict.
+// Rows are per (lemma, pos), so identical (pos, display variety,
+// syllabified) triples are collapsed; the UI groups by part of speech
+// when a word's pronunciations differ across them.
+const PRON_POS_RANK: Record<string, number> = { n: 0, v: 1, a: 2, r: 3 };
+
+export function shapePronunciations(
+  rows: Array<Record<string, unknown>>
+): Pronunciation[] {
+  const seen = new Set<string>();
+  const ranked: (Pronunciation & { posRank: number; rank: number })[] = [];
+  for (const r of rows) {
+    const source = String(r.source ?? "");
+    const rawVariety = String(r.variety ?? "");
+    const variety = rawVariety || (source === "cmudict" ? "US" : "");
+    const pos = String(r.pos ?? "");
+    const syllabified = String(r.syllabified ?? r.respelling ?? "");
+    const key = `${pos}|${variety}|${syllabified}`;
+    if (!syllabified || seen.has(key)) continue;
+    seen.add(key);
+    const rank =
+      source === "cmudict" ? 4
+      : variety === "US" ? 0
+      : variety === "GB" ? 1
+      : variety === "" ? 3
+      : 2;
+    ranked.push({
+      pos,
+      variety,
+      ipa: String(r.ipa ?? ""),
+      respelling: String(r.respelling ?? ""),
+      syllabified,
+      source,
+      posRank: PRON_POS_RANK[pos] ?? 99,
+      rank,
+    });
+  }
+  ranked.sort(
+    (a, b) =>
+      a.posRank - b.posRank ||
+      a.rank - b.rank ||
+      (a.variety < b.variety ? -1 : a.variety > b.variety ? 1 : 0) ||
+      (a.ipa < b.ipa ? -1 : a.ipa > b.ipa ? 1 : 0)
+  );
+  return ranked.map(({ posRank: _posRank, rank: _rank, ...rest }) => rest);
 }
 
 // Relation groups shown in the UI, in display order. Pointer codes are the

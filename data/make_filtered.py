@@ -100,6 +100,17 @@ def make_filtered(src, out, policy=None):
     def n(q, p=()):
         return con.execute(q, p).fetchone()[0]
 
+    def has_table(name):
+        return con.execute(
+            "SELECT COUNT(*) FROM sqlite_master WHERE type='table' AND name=?",
+            (name,)).fetchone()[0] > 0
+
+    # Tables for the removal report. pronunciation exists in DBs built
+    # with pronunciation support; older DBs filter fine without it.
+    report_tables = ["lemma", "sense", "synset", "synset_word", "relation"]
+    if has_table("pronunciation"):
+        report_tables.append("pronunciation")
+
     total_flagged_lemmas = n("SELECT COUNT(*) FROM content_flag")
     total_flagged_synsets = n("SELECT COUNT(*) FROM content_flag_synset")
     report["flagged_lemmas_total"] = total_flagged_lemmas
@@ -119,8 +130,7 @@ def make_filtered(src, out, policy=None):
     report["flagged_lemmas_retained"] = (
         total_flagged_lemmas - report["flagged_lemmas_applied"])
 
-    before = {t: n(f"SELECT COUNT(*) FROM {t}")
-              for t in ("lemma", "sense", "synset", "synset_word", "relation")}
+    before = {t: n(f"SELECT COUNT(*) FROM {t}") for t in report_tables}
 
     # 1. policy-flagged lemmas lose their senses and synset words
     con.execute("DELETE FROM sense WHERE lemma_id IN "
@@ -156,13 +166,16 @@ def make_filtered(src, out, policy=None):
                 "AND w.pos = relation.to_pos AND w.word_pos = relation.to_word - 1)")
     con.execute("DELETE FROM lemma WHERE NOT EXISTS "
                 "(SELECT 1 FROM sense s WHERE s.lemma_id = lemma.id)")
+    # Pronunciations belong to lemmas; drop rows whose lemma is gone.
+    if has_table("pronunciation"):
+        con.execute("DELETE FROM pronunciation WHERE lemma_id NOT IN "
+                    "(SELECT id FROM lemma)")
 
     # 4. the shipped db is clean; flags stay in the canonical db
     con.execute("DROP TABLE content_flag")
     con.execute("DROP TABLE content_flag_synset")
 
-    after = {t: n(f"SELECT COUNT(*) FROM {t}")
-             for t in ("lemma", "sense", "synset", "synset_word", "relation")}
+    after = {t: n(f"SELECT COUNT(*) FROM {t}") for t in report_tables}
     report["removed"] = {t: before[t] - after[t] for t in before}
     report.update({f"{t}_kept": after[t] for t in after})
 
@@ -215,7 +228,7 @@ def main():
     for t, c in report["removed"].items():
         print(f"    {t}: {c}")
     print("  kept:")
-    for t in ("lemma", "sense", "synset", "synset_word", "relation"):
+    for t in report["removed"]:
         print(f"    {t}: {report[f'{t}_kept']}")
 
 

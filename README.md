@@ -1,6 +1,6 @@
 # gloss
 
-A dead-simple dictionary for everyone, everywhere — powered by Open English WordNet.
+A free, open-source dictionary for everyone — powered by Open English WordNet.
 
 ```python
 import gloss
@@ -19,19 +19,22 @@ two. Offline-first, everywhere.
 ```
 gloss/
 ├── ATTRIBUTION.md  LICENSE  README.md
-├── data/           # pipeline: OEWN WNDB -> gloss.db, gloss_lite.bin (+ tests)
+├── data/           # pipeline: OEWN WNDB -> gloss.db, tiers (+ tests)
 ├── core/           # C99 engine: gloss.h, gloss.c, sqlite3 amalgam, tests, CMake
 ├── bindings/
 │   ├── python/     # PyPI package gloss-dict (cffi + pure-python fallback)
 │   ├── js/         # npm package gloss-dict (TS; node + browser targets)
 │   └── cpp/        # gloss.hpp header-only wrapper
-├── web/            # Next.js app + /api/v1            (Phase 2)
-├── mobile/         # Expo app (iOS + Android)          (Phase 3)
-├── desktop/        # Tauri app (Win/Mac/Linux)        (Phase 3)
-├── embedded/
-│   └── esp32/      # ESP-IDF lite build                (Phase 4)
-└── docs/
+├── web/            # Next.js app + /api/v1 (live on Vercel)
+└── desktop/        # Electron app (Win/Mac/Linux) — same files as the website
 ```
+
+## Status
+
+Done: the C99 core and all three bindings, the website (live), and the
+desktop app (0.1.0 installers for Windows, Mac, and Linux). Not started:
+a mobile app. Shelved: the ESP32 build (display hardware fault —
+restarts only with a working unit).
 
 ## Data
 

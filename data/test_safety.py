@@ -23,6 +23,7 @@ Exit nonzero on the first failure.
 """
 
 import argparse
+import json
 import os
 import sqlite3
 import sys
@@ -182,6 +183,29 @@ def main():
               "no sense orphaned across (offset, pos)")
         check(report["removed"]["synset"] > 0 and report["removed"]["lemma"] > 0,
               f"removals happened: {report['removed']}")
+        # 5b. examples: no example may mention a policy-filtered word
+        # (whole-word match, same rule as the scrub). A removed headword
+        # must not survive inside example text -- e.g. 'randy' kept an
+        # example reading 'feeling horny' after 'horny' was filtered.
+        check(report.get("examples_removed", -1) >= 0,
+              f"example scrub ran ({report.get('examples_removed')} removed)")
+        words = [r[0] for r in con.execute(
+            "SELECT lemma FROM lemma WHERE id IN (%s)"
+            % ",".join("?" * len(applied_lemmas)), tuple(applied_lemmas))]
+        pat = make_filtered.example_matcher(words)
+        bad = []
+        for sid, ex in f.execute(
+                "SELECT id, examples FROM sense WHERE examples NOT IN ('[]','')"):
+            for e in json.loads(ex):
+                if pat.search(make_filtered._CUM_LAUDE.sub("", e)):
+                    bad.append((sid, e))
+        check(not bad, f"no example mentions a policy-filtered word (bad: {bad[:3]})")
+        randy = f.execute(
+            "SELECT examples FROM sense WHERE lemma_id = "
+            "(SELECT id FROM lemma WHERE lemma = 'randy')").fetchall()
+        check(all('horny' not in e.lower() for (ex,) in randy
+                  for e in json.loads(ex)),
+              "'randy' examples no longer mention 'horny'")
         # severity-1 mild/clinical lemmas survive with their senses
         for w in ["jesus", "christ", "hell", "ass", "nipple", "penis", "damn"]:
             row = f.execute("SELECT id FROM lemma WHERE lemma = ?", (w,)).fetchone()

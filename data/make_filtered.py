@@ -9,9 +9,12 @@ DB, then in the copy:
   2. removes every flagged synset -- its words, senses, and relations,
   3. prunes relations left dangling (synset or word endpoint gone),
   4. drops lemmas left with no senses,
-  5. drops the flag tables (the shipped DB is clean; the canonical DB
+  5. scrubs example sentences that mention a policy-filtered lemma (the
+     sense stays; only the offending example string goes -- a removed
+     headword must not survive inside example text),
+  6. drops the flag tables (the shipped DB is clean; the canonical DB
      keeps the flags for audit),
-  6. stamps meta: build_profile=filtered, filtered_at, removal counts.
+  7. stamps meta: build_profile=filtered, filtered_at, removal counts.
 
 Filtering policy (DEFAULT_POLICY, overridable via CLI):
   - OEWN-native flags (oewn-usage-label, oewn-slur-domain) are ALWAYS
@@ -34,6 +37,7 @@ import argparse
 import datetime as dt
 import json
 import os
+import re
 import shutil
 import sqlite3
 
@@ -59,6 +63,48 @@ def describe_policy(policy):
         dsojevic_min_severity=policy["dsojevic_min_severity"],
         ldnoobw_state="applied" if policy["ldnoobw"] else "skipped",
     )
+
+
+# Latin "cum laude" is exempt from the example scrub: "cum" there is
+# Latin for "with", not the profanity -- the same Scunthorpe caution
+# build_flags.py applies when flagging headwords.
+_CUM_LAUDE = re.compile(r"\bcum laude\b", re.I)
+
+
+def example_matcher(words):
+    """One compiled regex matching any of `words` as whole words.
+
+    Same rule as the flagging: whole words only, never substrings, so
+    "sparse" stays safe from "arse" and "cocktail" from "cock".
+    Multiword lemmas match across whitespace."""
+    def rx_for(w):
+        return r"\b" + r"\s+".join(map(re.escape, w.split())) + r"\b"
+    return re.compile("|".join(
+        rx_for(w) for w in sorted(words, key=len, reverse=True)), re.I)
+
+
+def scrub_examples(con, flagged_words):
+    """Remove example sentences that mention a policy-filtered lemma.
+
+    The sense itself stays; only the offending example string is dropped
+    from the sense's JSON example array. Returns (senses_touched,
+    examples_removed)."""
+    pat = example_matcher(flagged_words)
+    touched = removed = 0
+    rows = con.execute(
+        "SELECT id, examples FROM sense WHERE examples NOT IN ('[]','')").fetchall()
+    for sid, examples in rows:
+        try:
+            exs = json.loads(examples)
+        except ValueError:
+            continue
+        kept = [e for e in exs if not pat.search(_CUM_LAUDE.sub("", e))]
+        if len(kept) != len(exs):
+            con.execute("UPDATE sense SET examples = ? WHERE id = ?",
+                        (json.dumps(kept), sid))
+            touched += 1
+            removed += len(exs) - len(kept)
+    return touched, removed
 
 
 def policy_flagged_lemma_ids(con, policy):
@@ -125,6 +171,10 @@ def make_filtered(src, out, policy=None):
                 "PRIMARY KEY (synset_offset, pos))")
     con.executemany("INSERT OR IGNORE INTO policy_synset VALUES(?,?)",
                     policy_flagged_synsets(con))
+    # The flagged headwords themselves, for the example scrub below.
+    # Captured now: the lemma rows are deleted by the prune step.
+    flagged_words = [r[0] for r in con.execute(
+        "SELECT lemma FROM lemma WHERE id IN (SELECT lemma_id FROM policy_lemma)")]
     report["flagged_lemmas_applied"] = n("SELECT COUNT(*) FROM policy_lemma")
     report["flagged_synsets_applied"] = n("SELECT COUNT(*) FROM policy_synset")
     report["flagged_lemmas_retained"] = (
@@ -171,7 +221,12 @@ def make_filtered(src, out, policy=None):
         con.execute("DELETE FROM pronunciation WHERE lemma_id NOT IN "
                     "(SELECT id FROM lemma)")
 
-    # 4. the shipped db is clean; flags stay in the canonical db
+    # 5. scrub examples that mention a policy-filtered lemma
+    touched, removed = scrub_examples(con, flagged_words)
+    report["senses_with_examples_scrubbed"] = touched
+    report["examples_removed"] = removed
+
+    # 6. the shipped db is clean; flags stay in the canonical db
     con.execute("DROP TABLE content_flag")
     con.execute("DROP TABLE content_flag_synset")
 
@@ -227,6 +282,8 @@ def main():
     print("  removed:")
     for t, c in report["removed"].items():
         print(f"    {t}: {c}")
+    print(f"  examples scrubbed: {report['examples_removed']} removed from "
+          f"{report['senses_with_examples_scrubbed']} senses")
     print("  kept:")
     for t in report["removed"]:
         print(f"    {t}: {report[f'{t}_kept']}")

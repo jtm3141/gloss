@@ -161,7 +161,16 @@ remove-everything; `--no-ldnoobw` skips LDNOOBW. The effective policy is
 stamped into the filtered DB's `meta.content_policy`.
 
 Default-policy filtered build removes 268 lemmas, 411 senses, 144 synsets,
-957 relations; foreign-key clean.
+957 relations; foreign-key clean. It also scrubs example sentences that
+mention a policy-filtered headword (269 examples removed from 248 senses
+in the OEWN 2024 build): the sense stays, only the offending example
+string goes -- a removed word must not survive inside example text
+(e.g. 'randy' kept an example reading 'feeling horny' after 'horny' was
+filtered). Whole-word matching only, same rule as the flagging; the Latin
+phrase 'cum laude' is exempt ('cum' there is Latin for 'with').
+Definitions are NOT scrubbed: 1,280 sense definitions still mention a
+filtered word, and removing those would mean deleting senses -- a
+separate decision.
 Design rules: anchored whole-headword matching only (never substring —
 "sparse", "manuscript", "Scunthorpe" stay safe); dsojevic `exceptions`
 honored; plain `(slang)` labels are not offensive; source URL/license/

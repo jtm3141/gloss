@@ -41,8 +41,10 @@ restarts only with a working unit).
 Built from [Open English WordNet](https://github.com/globalwordnet/english-wordnet)
 (CC-BY 4.0) — direct downloads, no scraping. See `ATTRIBUTION.md` and `data/`.
 
-Phone apps ship a taboo-filtered build (content flags are applied at build time;
-the canonical DB keeps everything, flagged).
+The shipped database is filtered for taboo and offensive words — headwords
+and example sentences alike — so it can be used as widely as possible. The
+canonical database keeps every entry, flagged; the filtering policy is
+documented in `data/README.md`.
 
 ## Database tiers
 
@@ -54,9 +56,14 @@ on first use. See [`data/tiers/TIERS.md`](data/tiers/TIERS.md).
 
 ## Rebuilding the database
 
-```powershell
-C:\Users\<user>\miniconda3\python.exe data\build_db.py --download
+Any recent Python 3 works — the build uses only the standard library:
+
+```sh
+python data/build_db.py --download
 ```
+
+(`python` may be `python3` on your system. The full pipeline — flags,
+filtering, tiers — is documented in `data/README.md`.)
 
 ## License
 

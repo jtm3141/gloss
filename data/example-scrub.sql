@@ -4,7 +4,7 @@
 -- definitions, only the offending example strings go.
 -- 248 senses updated.
 -- Apply (same runner as the pronunciation migration):
---   node C:\Users\justi\AppData\Local\Temp\example-scrub-apply.mjs
+--   node example-scrub-apply.mjs  (from the repo's data/ directory)
 
 UPDATE sense SET examples='[]' WHERE id=1881;
 UPDATE sense SET examples='[]' WHERE id=6078;

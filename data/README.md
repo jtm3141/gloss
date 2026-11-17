@@ -3,8 +3,8 @@
 The build pipeline. One command turns the Open English WordNet download into
 the canonical `gloss.db`:
 
-```powershell
-C:\Users\<user>\miniconda3\python.exe data\build_db.py --download
+```sh
+python data/build_db.py --download
 ```
 
 ## What it does
@@ -34,9 +34,9 @@ C:\Users\<user>\miniconda3\python.exe data\build_db.py --download
 (phone bundles, ESP32, …). Lemmas are ranked by an external word-frequency
 list and the top N distinct lemmas are kept, with all their POS entries.
 
-```powershell
-C:\Users\<user>\miniconda3\python.exe -m pip install wordfreq   # once
-C:\Users\<user>\miniconda3\python.exe data\make_tier.py --in data\gloss-filtered.db --out data\gloss-core.db --top-lemmas 5000 --max-senses 2 --drop-examples
+```sh
+python -m pip install wordfreq   # once
+python data/make_tier.py --in data/gloss-filtered.db --out data/gloss-core.db --top-lemmas 5000 --max-senses 2 --drop-examples
 ```
 
 Knobs: `--top-lemmas N` (default 5000), `--max-senses M` per lemma

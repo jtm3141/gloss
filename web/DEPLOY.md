@@ -15,7 +15,7 @@ curl -sSfL https://get.tur.so/install.sh | bash
 turso auth login          # opens a browser
 
 # create the database straight from the filtered SQLite file (~74 MB upload)
-turso db create gloss --from-file C:\Users\<user>\Dev\gloss\data\gloss-filtered.db --wait
+turso db create gloss --from-file data/gloss-filtered.db --wait
 
 # connection details for Vercel
 turso db show gloss --url            # -> TURSO_DATABASE_URL
@@ -34,8 +34,8 @@ re-upload is wasteful — import just the table instead. Generate the dump
 from the new filtered build and load it through the Turso shell:
 
 ```powershell
-cd C:\Users\<user>\Dev\gloss\data
-C:\Users\<user>\miniconda3\python.exe makedump.py        # writes pronunciation-update.sql
+cd data
+python makedump.py        # writes pronunciation-update.sql
 
 # back up the live database first
 turso db shell gloss .dump > turso-backup-YYYY-MM-DD.sql
@@ -83,7 +83,7 @@ server flavor. The token stays server-side; it is never exposed to the browser.
 ## 3. Local dev
 
 ```powershell
-cd C:\Users\<user>\Dev\gloss\web
+cd web
 copy .env.example .env.local   # file: URL at the real database — no account needed
 npm run dev
 ```
@@ -93,7 +93,7 @@ npm run dev
 ## Desktop (unchanged behavior)
 
 ```powershell
-cd C:\Users\<user>\Dev\gloss\web
+cd web
 npm run build:desktop   # static export + bundled DB, for the Electron shell
 ```
 
